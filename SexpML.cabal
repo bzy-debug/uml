@@ -50,19 +50,21 @@ extra-source-files: CHANGELOG.md
 library
     -- Modules exported by the library.
     exposed-modules:
-        MyLib
         Parser
+        Ast
 
     -- Modules included in this library but not exported.
     -- other-modules:
 
-    -- LANGUAGE extensions used by modules in this package.
-    other-extensions: OverloadedStrings
+    default-extensions: OverloadedStrings
+    ghc-options: -Wall
 
     -- Other library packages from which modules are imported.
     build-depends:
         , base ^>=4.16.4.0
         , megaparsec
+        , text
+        , parser-combinators
 
     -- Directories containing source files.
     hs-source-dirs:   src
