@@ -1,13 +1,14 @@
 module Ast where
 
-import Data.IORef (IORef)
 import qualified Data.Text as T
+import qualified Data.Map as Map
 
 type Name = T.Text
+type Location = Int
 
-type Env a = [(Name, a)]
+type Env = Map.Map Name Location
 
-type Ref a = IORef a
+type Store = Map.Map Location Value
 
 data Def
   = DVal (Name, Expr)
@@ -17,41 +18,43 @@ data Def
 data Expr
   = ELiteral Value
   | EVar Name
-  | ESet (Name, Expr)
-  | EIfx (Expr, Expr, Expr)
-  | EWhilex (Expr, Expr)
+  | ESet Name Expr
+  | EIfx Expr Expr Expr
+  | EWhilex Expr Expr
   | EBegin [Expr]
-  | EApply (Expr, [Expr])
-  | ELetx (LetFlavor, [(Name, Expr)], Expr)
+  | EApply Expr [Expr]
+  | ELetx LetFlavor [(Name, Expr)] Expr
   | ELambda Lambda
+  deriving Show
 
 data LetFlavor = Let | LetRec | LetStart
+  deriving Show
 
 data Value
   = VSym Name
   | VNum Int
   | VBool Bool
   | VNil
-  | VPair (Value, Value)
-  | VClosure (Lambda, Env (Ref Value))
+  | VPair Value Value
+  | VClosure Lambda Env
   | VPrimitve Primitive
 
 type Lambda = ([Name], Expr)
 
 type Primitive = [(Expr, Value)] -> Value
 
-emptyEnv :: Env a
-emptyEnv = []
+emptyEnv :: Env
+emptyEnv = Map.empty
 
 instance Show Value where
   show (VSym v) = T.unpack v
   show (VNum n) = show n
   show (VBool b) = T.unpack $ if b then "#t" else "#f"
   show VNil = T.unpack "()"
-  show (VPair (car, cdr)) =
-    let tail' (VPair (car', cdr')) = " " ++ show car' ++ tail' cdr'
+  show (VPair car cdr) =
+    let tail' (VPair car' cdr') = " " ++ show car' ++ tail' cdr'
         tail' VNil = ")"
         tail' v = " . " ++ show v ++ ")"
      in "(" ++ show car ++ tail' cdr
-  show (VClosure _) = "<function>"
+  show (VClosure _ _) = "<function>"
   show (VPrimitve _) = "<function>"

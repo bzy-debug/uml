@@ -18,10 +18,9 @@ projectBool (VBool False) = False
 projectBool _ = True
 
 embedList :: [Value] -> Value
-embedList [] = VNil
-embedList (v : vs) = VPair (v, embedList vs)
+embedList = foldr VPair VNil
 
 projectList :: Value -> Maybe [Value]
-projectList (VPair (car, cdr)) = liftM2 (:) (Just car) (projectList cdr)
+projectList (VPair car cdr) = liftM2 (:) (Just car) (projectList cdr)
 projectList VNil = Just []
 projectList _ = Nothing

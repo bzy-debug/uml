@@ -68,6 +68,8 @@ library
         , text
         , parser-combinators
         , transformers
+        , containers
+        , mtl
 
     -- Directories containing source files.
     hs-source-dirs:   src
