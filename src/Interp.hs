@@ -11,7 +11,7 @@ import qualified Data.Map as Map
 data InterpException
   = NotFound Name
   | RuntimeError String
-  deriving Show
+  deriving (Show)
 
 instance Exception InterpException
 
@@ -73,7 +73,53 @@ eval (EWhilex guard body) = do
 eval (EBegin exprs) = iter exprs (VBool False)
   where
     iter [] lastVal = return lastVal
-    iter (e:es) _ = eval e >>= iter es
+    iter (e : es) _ = eval e >>= iter es
 eval (ELambda lambda) = do
   InterpState {env = env} <- get
   return $ VClosure lambda env
+eval e@(EApply fun args) = do
+  funVal <- eval fun
+  case funVal of
+    VPrimitve prim -> do
+      vals <- mapM eval args
+      return $ prim e vals
+    VClosure (formals, body) savedEnv -> do
+      s@InterpState {env = curEnv} <- get
+      actuals <- mapM eval args
+      if length actuals == length formals
+        then do
+          put s {env = savedEnv}
+          zipWithM_ newRef formals actuals
+          res <- eval body
+          put s {env = curEnv}
+          return res
+        else throw (RuntimeError "arity number error")
+    v -> throw (RuntimeError $ "Not a function: " ++ show v)
+eval (ELetx Let binds body) = do
+  let (names, rhs) = unzip binds
+  s@InterpState {env = curEnv} <- get
+  vals <- mapM eval rhs
+  zipWithM_ newRef names vals
+  res <- eval body
+  put s {env = curEnv}
+  return res
+eval (ELetx LetStar binds body) = do
+  s@InterpState {env = curEnv} <- get
+  forM_
+    binds
+    ( \(name, rhs) -> do
+        val <- eval rhs
+        newRef name val
+    )
+  res <- eval body
+  put s {env = curEnv}
+  return res
+eval (ELetx LetRec binds body) = do
+  s@InterpState {env = curEnv} <- get
+  let (names, rhs) = unzip binds
+  mapM_ (`newRef` VNil) names
+  vals <- mapM eval rhs
+  zipWithM_ writeRef names vals
+  res <- eval body
+  put s {env = curEnv}
+  return res

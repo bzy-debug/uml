@@ -27,7 +27,7 @@ data Expr
   | ELambda Lambda
   deriving Show
 
-data LetFlavor = Let | LetRec | LetStart
+data LetFlavor = Let | LetRec | LetStar
   deriving Show
 
 data Value
@@ -41,7 +41,7 @@ data Value
 
 type Lambda = ([Name], Expr)
 
-type Primitive = [(Expr, Value)] -> Value
+type Primitive = Expr -> [Value] -> Value
 
 emptyEnv :: Env
 emptyEnv = Map.empty
