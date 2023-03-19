@@ -7,6 +7,9 @@ import Control.Exception
 import Control.Monad.State
 import Convert
 import qualified Data.Map as Map
+import qualified Data.Text as T
+import Parser (expression)
+import Text.Megaparsec (parseMaybe)
 
 data InterpException
   = NotFound Name
@@ -20,6 +23,9 @@ data InterpState = InterpState
     store :: Store,
     loc :: Int
   }
+
+initState :: InterpState
+initState = InterpState {env = Map.empty, store = Map.empty, loc = 0}
 
 type InterpMonad = StateT InterpState (Either InterpException)
 
@@ -55,71 +61,71 @@ modifyRef name f = do
   val <- readRef name
   writeRef name (f val)
 
-eval :: Expr -> InterpMonad Value
-eval (ELiteral val) = return val
-eval (EVar name) = readRef name
-eval (ESet name expr) = do
-  val <- eval expr
-  writeRef name val
-  return val
-eval (EIfx cond ifso ifelse) = do
-  condVal <- eval cond
-  eval $ if projectBool condVal then ifso else ifelse
-eval (EWhilex guard body) = do
-  guardVal <- eval guard
-  if projectBool guardVal
-    then eval body >> eval (EWhilex guard body)
-    else return $ VBool False
-eval (EBegin exprs) = iter exprs (VBool False)
+eval' :: Expr -> InterpMonad Value
+eval' expr = do
+  s@InterpState {env = curEnv} <- get
+  res <- ev expr
+  put s {env = curEnv}
+  return res
   where
-    iter [] lastVal = return lastVal
-    iter (e : es) _ = eval e >>= iter es
-eval (ELambda lambda) = do
-  InterpState {env = env} <- get
-  return $ VClosure lambda env
-eval e@(EApply fun args) = do
-  funVal <- eval fun
-  case funVal of
-    VPrimitve prim -> do
-      vals <- mapM eval args
-      return $ prim e vals
-    VClosure (formals, body) savedEnv -> do
-      s@InterpState {env = curEnv} <- get
-      actuals <- mapM eval args
-      if length actuals == length formals
-        then do
-          put s {env = savedEnv}
-          zipWithM_ newRef formals actuals
-          res <- eval body
-          put s {env = curEnv}
-          return res
-        else throw (RuntimeError "arity number error")
-    v -> throw (RuntimeError $ "Not a function: " ++ show v)
-eval (ELetx Let binds body) = do
-  let (names, rhs) = unzip binds
-  s@InterpState {env = curEnv} <- get
-  vals <- mapM eval rhs
-  zipWithM_ newRef names vals
-  res <- eval body
-  put s {env = curEnv}
-  return res
-eval (ELetx LetStar binds body) = do
-  s@InterpState {env = curEnv} <- get
-  forM_
-    binds
-    ( \(name, rhs) -> do
-        val <- eval rhs
-        newRef name val
-    )
-  res <- eval body
-  put s {env = curEnv}
-  return res
-eval (ELetx LetRec binds body) = do
-  s@InterpState {env = curEnv} <- get
-  let (names, rhs) = unzip binds
-  mapM_ (`newRef` VNil) names
-  vals <- mapM eval rhs
-  zipWithM_ writeRef names vals
-  res <- eval body
-  put s {env = curEnv}
-  return res
+    ev (ELiteral val) = return val
+    ev (EVar name) = readRef name
+    ev (ESet name expr) = do
+      val <- ev expr
+      writeRef name val
+      return val
+    ev (EIfx cond ifso ifelse) = do
+      condVal <- ev cond
+      ev $ if projectBool condVal then ifso else ifelse
+    ev (EWhilex guard body) = do
+      guardVal <- ev guard
+      if projectBool guardVal
+        then ev body >> ev (EWhilex guard body)
+        else return $ VBool False
+    ev (EBegin exprs) = iter exprs (VBool False)
+      where
+        iter [] lastVal = return lastVal
+        iter (e : es) _ = ev e >>= iter es
+    ev (ELambda lambda) = do
+      InterpState {env = env} <- get
+      return $ VClosure lambda env
+    ev e@(EApply fun args) = do
+      funVal <- ev fun
+      case funVal of
+        VPrimitve prim -> do
+          vals <- mapM ev args
+          return $ prim e vals
+        VClosure (formals, body) savedEnv -> do
+          actuals <- mapM ev args
+          if length actuals == length formals
+            then do
+              modify (\s -> s {env = savedEnv})
+              zipWithM_ newRef formals actuals
+              ev body
+            else throw (RuntimeError "arity number error")
+        v -> throw (RuntimeError $ "Not a function" ++ show v)
+    ev (ELetx Let binds body) = do
+      let (names, rhs) = unzip binds
+      vals <- mapM ev rhs
+      zipWithM_ newRef names vals
+      ev body
+    ev (ELetx LetStar binds body) = do
+      forM_
+        binds
+        ( \(name, rhs) -> do
+            val <- ev rhs
+            newRef name val
+        )
+      ev body
+    ev (ELetx LetRec binds body) = do
+      let (names, rhs) = unzip binds
+      mapM_ (`newRef` VNil) names
+      vals <- mapM ev rhs
+      zipWithM_ writeRef names vals
+      ev body
+
+parseEither p s = maybe (Left $ RuntimeError "ParseError") Right (parseMaybe p s)
+testEval' :: T.Text -> Either InterpException Value
+testEval' s = do
+  expr <- parseEither expression s
+  evalStateT (eval' expr) initState
