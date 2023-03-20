@@ -115,4 +115,3 @@ test-suite Ast-Test
         , base ^>=4.16.4.0
         , SexpML
         , hspec
-        , text
