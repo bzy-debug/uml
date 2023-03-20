@@ -7,7 +7,6 @@ import Control.Exception
 import Control.Monad.State
 import Convert
 import qualified Data.Map as Map
-import qualified Data.Text as T
 import Parser (Parser, expression)
 import Text.Megaparsec (parseMaybe)
 import Util
@@ -97,7 +96,7 @@ eval expr = do
               zipWithM_ newRef formals actuals
               ev body
             else throw (RuntimeError "arity number error")
-        v -> throw (RuntimeError $ "Not a function" ++ show v)
+        v -> throw (RuntimeError ("Not a function" ++ show v))
     ev (ELetx Let binds body) = do
       let (names, rhs) = unzip binds
       vals <- mapM ev rhs
@@ -118,10 +117,10 @@ eval expr = do
       zipWithM_ writeRef names vals
       ev body
 
-parseEither :: Parser Expr -> T.Text -> Either InterpException Expr
+parseEither :: Parser Expr -> String -> Either InterpException Expr
 parseEither p s = maybe (Left $ RuntimeError "ParseError") Right (parseMaybe p s)
 
-testEval :: T.Text -> Either InterpException Value
+testEval :: String -> Either InterpException Value
 testEval s = do
   expr <- parseEither expression s
   evalStateT (eval expr) initState

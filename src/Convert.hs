@@ -24,3 +24,9 @@ projectList :: Value -> Maybe [Value]
 projectList (VPair car cdr) = liftM2 (:) (Just car) (projectList cdr)
 projectList VNil = Just []
 projectList _ = Nothing
+
+-- inExp :: ([Value] -> Either InterpException Value) -> Primitive
+-- inExp f =
+--   \e vs ->
+--     case f vs of
+--       Left e ->

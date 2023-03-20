@@ -59,14 +59,12 @@ library
     -- Modules included in this library but not exported.
     -- other-modules:
 
-    default-extensions: OverloadedStrings
     ghc-options: -Wall
 
     -- Other library packages from which modules are imported.
     build-depends:
         , base ^>=4.16.4.0
         , megaparsec
-        , text
         , parser-combinators
         , transformers
         , containers
@@ -111,7 +109,6 @@ test-suite Ast-Test
 
     -- The entrypoint to the test suite.
     main-is:          AstTest.hs
-    default-extensions: OverloadedStrings
 
     -- Test dependencies.
     build-depends:

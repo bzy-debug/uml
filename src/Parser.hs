@@ -4,15 +4,14 @@ import Ast
 import Control.Monad
 import Control.Monad.Combinators
 import Convert
-import qualified Data.Text as T
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
-type Parser = Parsec Void T.Text
+type Parser = Parsec Void String
 
-reserved :: [T.Text]
+reserved :: [String]
 reserved = ["set", "if", "while", "begin", "let", "letrec", "let*", "lambda"]
 
 spaceConsumer :: Parser ()
@@ -25,7 +24,7 @@ spaceConsumer =
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
 
-symbol :: T.Text -> Parser T.Text
+symbol :: String -> Parser String
 symbol = L.symbol spaceConsumer
 
 parens :: Parser a -> Parser a
@@ -37,7 +36,7 @@ brackets = between (symbol "[") (symbol "]")
 surround :: Parser a -> Parser a
 surround p = parens p <|> brackets p
 
-keywordSurround :: T.Text -> Parser a -> Parser a
+keywordSurround :: String -> Parser a -> Parser a
 keywordSurround keyword p = surround $ symbol keyword *> p
 
 -- <letter> |!|$|%|&|*|/|:|<|=|>|?|~|_|^
@@ -53,11 +52,11 @@ subsequent =
     <|> digitChar
     <|> oneOf ['.', '+', '-', '@']
 
-name :: Parser T.Text
+name :: Parser String
 name = lexeme $ do
   i <- initial
   s <- many subsequent
-  return $ T.pack (i : s)
+  return $ i : s
 
 symbolName :: Parser Value
 symbolName = VSym <$> name

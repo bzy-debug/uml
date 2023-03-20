@@ -1,10 +1,9 @@
 module Ast where
 
 import Util
-import qualified Data.Text as T
 import qualified Data.Map as Map
 
-type Name = T.Text
+type Name = String
 type Location = Int
 
 type Env = Map.Map Name Location
@@ -48,10 +47,10 @@ emptyEnv :: Env
 emptyEnv = Map.empty
 
 instance Show Value where
-  show (VSym v) = T.unpack v
+  show (VSym v) = v
   show (VNum n) = show n
-  show (VBool b) = T.unpack $ if b then "#t" else "#f"
-  show VNil = T.unpack "()"
+  show (VBool b) = if b then "#t" else "#f"
+  show VNil = "()"
   show (VPair car cdr) =
     let tail' (VPair car' cdr') = " " ++ show car' ++ tail' cdr'
         tail' VNil = ")"
