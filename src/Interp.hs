@@ -8,15 +8,9 @@ import Control.Monad.State
 import Convert
 import qualified Data.Map as Map
 import qualified Data.Text as T
-import Parser (expression)
+import Parser (Parser, expression)
 import Text.Megaparsec (parseMaybe)
-
-data InterpException
-  = NotFound Name
-  | RuntimeError String
-  deriving (Show)
-
-instance Exception InterpException
+import Util
 
 data InterpState = InterpState
   { env :: Env,
@@ -61,8 +55,8 @@ modifyRef name f = do
   val <- readRef name
   writeRef name (f val)
 
-eval' :: Expr -> InterpMonad Value
-eval' expr = do
+eval :: Expr -> InterpMonad Value
+eval expr = do
   s@InterpState {env = curEnv} <- get
   res <- ev expr
   put s {env = curEnv}
@@ -94,7 +88,7 @@ eval' expr = do
       case funVal of
         VPrimitve prim -> do
           vals <- mapM ev args
-          return $ prim e vals
+          either throw return (prim e vals)
         VClosure (formals, body) savedEnv -> do
           actuals <- mapM ev args
           if length actuals == length formals
@@ -124,8 +118,10 @@ eval' expr = do
       zipWithM_ writeRef names vals
       ev body
 
+parseEither :: Parser Expr -> T.Text -> Either InterpException Expr
 parseEither p s = maybe (Left $ RuntimeError "ParseError") Right (parseMaybe p s)
-testEval' :: T.Text -> Either InterpException Value
-testEval' s = do
+
+testEval :: T.Text -> Either InterpException Value
+testEval s = do
   expr <- parseEither expression s
-  evalStateT (eval' expr) initState
+  evalStateT (eval expr) initState

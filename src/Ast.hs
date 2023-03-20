@@ -1,5 +1,6 @@
 module Ast where
 
+import Util
 import qualified Data.Text as T
 import qualified Data.Map as Map
 
@@ -41,7 +42,7 @@ data Value
 
 type Lambda = ([Name], Expr)
 
-type Primitive = Expr -> [Value] -> Value
+type Primitive = Expr -> [Value] -> Either InterpException Value
 
 emptyEnv :: Env
 emptyEnv = Map.empty
