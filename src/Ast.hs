@@ -1,18 +1,35 @@
 module Ast where
 
+import Control.Monad.Except
+import Control.Monad.State
 import qualified Data.Map as Map
 
 type Name = String
+
 type Location = Int
 
 type Env = Map.Map Name Location
 
 type Store = Map.Map Location Value
 
+data InterpException
+  = NotFound
+  | ArityError
+  | TypError
+  deriving (Show)
+
+data InterpState = InterpState
+  { env :: Env,
+    store :: Store,
+    loc :: Int
+  }
+
 data Def
-  = DVal (Name, Expr)
+  = DVal Name Expr
   | DExpr Expr
-  | DDefine (Name, Lambda)
+  | DDefine Name [Name] Expr
+
+type InterpMonad = StateT InterpState (Except InterpException)
 
 data Expr
   = ELiteral Value
@@ -23,11 +40,11 @@ data Expr
   | EBegin [Expr]
   | EApply Expr [Expr]
   | ELetx LetFlavor [(Name, Expr)] Expr
-  | ELambda Lambda
-  deriving Show
+  | ELambda [Name] Expr
+  deriving (Show)
 
 data LetFlavor = Let | LetRec | LetStar
-  deriving Show
+  deriving (Show)
 
 data Value
   = VSym Name
@@ -35,15 +52,10 @@ data Value
   | VBool Bool
   | VNil
   | VPair Value Value
-  | VClosure Lambda Env
+  | VClosure [Name] Expr Env
   | VPrimitve Primitive
 
-type Lambda = ([Name], Expr)
-
-type Primitive = [Value] -> Value
-
-emptyEnv :: Env
-emptyEnv = Map.empty
+type Primitive = Expr -> [Value] -> InterpMonad Value
 
 instance Show Value where
   show (VSym v) = v
@@ -55,5 +67,5 @@ instance Show Value where
         tail' VNil = ")"
         tail' v = " . " ++ show v ++ ")"
      in "(" ++ show car ++ tail' cdr
-  show (VClosure _ _) = "<function>"
-  show (VPrimitve _) = "<function>"
+  show (VClosure {}) = "<closure>"
+  show (VPrimitve _) = "<primitive>"

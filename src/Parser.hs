@@ -102,8 +102,8 @@ literal =
 -- ifx :: Parser Expr
 -- ifx = do
 
-lambda :: Parser Lambda
-lambda = liftM2 (,) (surround $ many name) expression
+names :: Parser [Name]
+names = surround $ many name
 
 binds :: Parser [(Name, Expr)]
 binds = surround $ many (surround $ liftM2 (,) name expression)
@@ -119,5 +119,5 @@ expression =
     <|> try (keywordSurround "let" (liftM2 (ELetx Let) binds expression))
     <|> try (keywordSurround "let*" (liftM2 (ELetx LetStar) binds expression))
     <|> try (keywordSurround "letrec" (liftM2 (ELetx LetRec) binds expression))
-    <|> try (keywordSurround "lambda" (ELambda <$> lambda))
+    <|> try (keywordSurround "lambda" (liftM2 ELambda names expression))
     <|> try (parens (liftM2 EApply expression (many expression)))

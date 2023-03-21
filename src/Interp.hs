@@ -3,25 +3,15 @@
 module Interp where
 
 import Ast
+import Control.Monad.Except
 import Control.Monad.State
 import Convert
 import qualified Data.Map as Map
-import Parser (expression)
-import Text.Megaparsec (parseMaybe)
-import Control.Monad.Identity (Identity)
-import Util
-
-
-data InterpState = InterpState
-  { env :: Env,
-    store :: Store,
-    loc :: Int
-  }
+import Parser
+import Text.Megaparsec
 
 initState :: InterpState
 initState = InterpState {env = Map.empty, store = Map.empty, loc = 0}
-
-type InterpMonad = StateT InterpState Identity
 
 newRef :: Name -> Value -> InterpMonad ()
 newRef name value = do
@@ -37,17 +27,17 @@ readRef :: Name -> InterpMonad Value
 readRef name = do
   InterpState {env = env, store = store} <- get
   case Map.lookup name env of
-    Nothing -> notFoundError name
+    Nothing -> throwError NotFound
     Just loc ->
       case Map.lookup loc store of
-        Nothing -> notFoundError name
+        Nothing -> throwError NotFound
         Just val -> return val
 
 writeRef :: Name -> Value -> InterpMonad ()
 writeRef name val = do
   s@InterpState {env = env, store = store} <- get
   case Map.lookup name env of
-    Nothing -> notFoundError name
+    Nothing -> throwError NotFound
     Just loc -> put $ s {store = Map.insert loc val store}
 
 modifyRef :: Name -> (Value -> Value) -> InterpMonad ()
@@ -83,24 +73,24 @@ eval expr = do
       where
         iter [] lastVal = return lastVal
         iter (e : es) _ = ev e >>= iter es
-    ev (ELambda lambda) = do
+    ev (ELambda names body) = do
       InterpState {env = env} <- get
-      return $ VClosure lambda env
-    ev (EApply fun args) = do
+      return $ VClosure names body env
+    ev e@(EApply fun args) = do
       funVal <- ev fun
       case funVal of
         VPrimitve prim -> do
           vals <- mapM ev args
-          return $ prim vals
-        VClosure (formals, body) savedEnv -> do
+          prim e vals
+        VClosure formals body savedEnv -> do
           actuals <- mapM ev args
           if length formals == length actuals
             then do
               modify (\s -> s {env = savedEnv})
               zipWithM_ newRef formals actuals
               ev body
-            else arityError (length formals) (length actuals)
-        v -> error ("Not a function" ++ show v)
+            else throwError ArityError
+        _ -> throwError TypError
     ev (ELetx Let binds body) = do
       let (names, rhs) = unzip binds
       vals <- mapM ev rhs
@@ -121,7 +111,7 @@ eval expr = do
       zipWithM_ writeRef names vals
       ev body
 
-testEval :: String -> Identity Value
+testEval :: String -> Except InterpException Value
 testEval s =
   case parseMaybe expression s of
     Nothing -> error "Parse error"
