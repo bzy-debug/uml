@@ -33,30 +33,23 @@ parens = between (symbol "(") (symbol ")")
 brackets :: Parser a -> Parser a
 brackets = between (symbol "[") (symbol "]")
 
-surround :: Parser a -> Parser a
-surround p = parens p <|> brackets p
+curlies :: Parser a -> Parser a
+curlies = between (symbol "{") (symbol "}")
 
-keywordSurround :: String -> Parser a -> Parser a
-keywordSurround keyword p = surround $ symbol keyword *> p
+surround :: Parser a -> Parser a
+surround p = parens p <|> brackets p <|> curlies p
+
+surroundBy :: String -> Parser a -> Parser a
+surroundBy keyword p = surround $ symbol keyword *> p
 
 -- <letter> |!|$|%|&|*|/|:|<|=|>|?|~|_|^
-initial :: Parser Char
-initial =
+letter :: Parser Char
+letter =
   letterChar
-    <|> oneOf ['!', '$', '%', '&', '*', '/', ':', '<', '>', '=', '?', '~', '_', '^']
-
--- <initial> | <digit 10> | . | + | - | @ |
-subsequent :: Parser Char
-subsequent =
-  initial
-    <|> digitChar
-    <|> oneOf ['.', '+', '-', '@']
+    <|> oneOf "!$%&*/:<=?>~_^.+-@"
 
 name :: Parser String
-name = lexeme $ do
-  i <- initial
-  s <- many subsequent
-  return $ i : s
+name = lexeme (some letter)
 
 symbolName :: Parser Value
 symbolName = VSym <$> name
@@ -83,14 +76,14 @@ atom :: Parser Value
 atom = symbolName <|> numeral <|> true <|> false
 
 sexp :: Parser Value
-sexp = atom <|> parens (embedList <$> many sexp)
+sexp = atom <|> surround (embedList <$> many sexp)
 
 literal :: Parser Expr
 literal =
   ELiteral
     <$> (numeral <|> true <|> false <|> (char '\'' *> sexp) <|> quotedSexp)
   where
-    quotedSexp = keywordSurround "quote" sexp
+    quotedSexp = surroundBy "quote" sexp
 
 -- set :: Parser Expr
 -- set = do
@@ -112,12 +105,12 @@ expression :: Parser Expr
 expression =
   try literal
     <|> try variable
-    <|> try (keywordSurround "set" (liftM2 ESet name expression))
-    <|> try (keywordSurround "if" (liftM3 EIfx expression expression expression))
-    <|> try (keywordSurround "while" (liftM2 EWhilex expression expression))
-    <|> try (keywordSurround "begin" (EBegin <$> many expression))
-    <|> try (keywordSurround "let" (liftM2 (ELetx Let) binds expression))
-    <|> try (keywordSurround "let*" (liftM2 (ELetx LetStar) binds expression))
-    <|> try (keywordSurround "letrec" (liftM2 (ELetx LetRec) binds expression))
-    <|> try (keywordSurround "lambda" (liftM2 ELambda names expression))
-    <|> try (parens (liftM2 EApply expression (many expression)))
+    <|> try (surroundBy "set" (liftM2 ESet name expression))
+    <|> try (surroundBy "if" (liftM3 EIfx expression expression expression))
+    <|> try (surroundBy "while" (liftM2 EWhilex expression expression))
+    <|> try (surroundBy "begin" (EBegin <$> many expression))
+    <|> try (surroundBy "let" (liftM2 (ELetx Let) binds expression))
+    <|> try (surroundBy "let*" (liftM2 (ELetx LetStar) binds expression))
+    <|> try (surroundBy "letrec" (liftM2 (ELetx LetRec) binds expression))
+    <|> try (surroundBy "lambda" (liftM2 ELambda names expression))
+    <|> try (surround (liftM2 EApply expression (many expression)))
