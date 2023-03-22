@@ -85,16 +85,6 @@ literal =
   where
     quotedSexp = surroundBy "quote" sexp
 
--- set :: Parser Expr
--- set = do
---   _ <- symbol "(set"
---   var <- name
---   _ <- symbol ")"
---   ESet var <$> expression
-
--- ifx :: Parser Expr
--- ifx = do
-
 names :: Parser [Name]
 names = surround $ many name
 

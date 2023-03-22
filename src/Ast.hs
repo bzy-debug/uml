@@ -15,7 +15,7 @@ type Store = Map.Map Location Value
 data InterpException
   = NotFound
   | ArityError
-  | TypError
+  | TypeError
   deriving (Show)
 
 data InterpState = InterpState

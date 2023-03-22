@@ -90,7 +90,7 @@ eval expr = do
               zipWithM_ newRef formals actuals
               ev body
             else throwError ArityError
-        _ -> throwError TypError
+        _ -> throwError TypeError
     ev (ELetx Let binds body) = do
       let (names, rhs) = unzip binds
       vals <- mapM ev rhs
