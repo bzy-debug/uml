@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module TypedAst where
 
 import Data.Map as Map
@@ -92,19 +93,19 @@ kindof tau delta =
           if any (/= Type) argKinds
             then throwError $ TypeError "argument list includes a non-type"
             else return Type
-    kind (TApp tau' actuals) = do
-      tauKind <- kind tau'
+    kind (TApp tau actuals) = do
+      tauKind <- kind tau
       case tauKind of
-        Type -> throwError $ TypeError ("tried to apply type " ++ show tau ++ "as type constructor")
+        Type -> throwError $ TypeError ("tried to apply type " ++ show tau ++ " as type constructor")
         Arrow formalKinds resultKind -> do
           actualKinds <- mapM kind actuals
           if and $ zipWith (==) formalKinds actualKinds
             then return resultKind
             else throwError $ TypeError ("type constructor" ++ show tau ++ " applied to the wrong arguments")
-    kind (TForall vars tau') = do
+    kind (TForall vars tau) = do
       let addons = Map.fromList $ zip vars (replicate (length vars) Type)
       let delta' = Map.union delta addons
-      tauKind <- kindof tau' delta'
+      tauKind <- kindof tau delta'
       case tauKind of
         Type -> return Type
         Arrow {} -> throwError $ TypeError "quantifed a non‐nullary type constructor"

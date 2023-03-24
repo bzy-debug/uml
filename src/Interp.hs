@@ -13,8 +13,8 @@ import Text.Megaparsec
 initState :: InterpState
 initState = InterpState {env = Map.empty, store = Map.empty, loc = 0}
 
-newRef :: Name -> Value -> InterpMonad ()
-newRef name value = do
+newBind :: Name -> Value -> InterpMonad ()
+newBind name value = do
   InterpState {env = env, store = store, loc = loc} <- get
   put $
     InterpState
@@ -23,8 +23,8 @@ newRef name value = do
         loc = loc + 1
       }
 
-readRef :: Name -> InterpMonad Value
-readRef name = do
+readBind :: Name -> InterpMonad Value
+readBind name = do
   InterpState {env = env, store = store} <- get
   case Map.lookup name env of
     Nothing -> throwError NotFound
@@ -33,17 +33,17 @@ readRef name = do
         Nothing -> throwError NotFound
         Just val -> return val
 
-writeRef :: Name -> Value -> InterpMonad ()
-writeRef name val = do
+writeBind :: Name -> Value -> InterpMonad ()
+writeBind name val = do
   s@InterpState {env = env, store = store} <- get
   case Map.lookup name env of
     Nothing -> throwError NotFound
     Just loc -> put $ s {store = Map.insert loc val store}
 
-modifyRef :: Name -> (Value -> Value) -> InterpMonad ()
-modifyRef name f = do
-  val <- readRef name
-  writeRef name (f val)
+modifyBind :: Name -> (Value -> Value) -> InterpMonad ()
+modifyBind name f = do
+  val <- readBind name
+  writeBind name (f val)
 
 primitives :: [Primitive]
 primitives = []
@@ -56,10 +56,10 @@ eval expr = do
   return res
   where
     ev (ELiteral val) = return val
-    ev (EVar name) = readRef name
+    ev (EVar name) = readBind name
     ev (ESet name expr) = do
       val <- ev expr
-      writeRef name val
+      writeBind name val
       return val
     ev (EIfx cond ifso ifelse) = do
       condVal <- ev cond
@@ -87,28 +87,28 @@ eval expr = do
           if length formals == length actuals
             then do
               modify (\s -> s {env = savedEnv})
-              zipWithM_ newRef formals actuals
+              zipWithM_ newBind formals actuals
               ev body
             else throwError ArityError
         _ -> throwError TypeError
     ev (ELetx Let binds body) = do
       let (names, rhs) = unzip binds
       vals <- mapM ev rhs
-      zipWithM_ newRef names vals
+      zipWithM_ newBind names vals
       ev body
     ev (ELetx LetStar binds body) = do
       forM_
         binds
         ( \(name, rhs) -> do
             val <- ev rhs
-            newRef name val
+            newBind name val
         )
       ev body
     ev (ELetx LetRec binds body) = do
       let (names, rhs) = unzip binds
-      mapM_ (`newRef` VNil) names
+      mapM_ (`newBind` VNil) names
       vals <- mapM ev rhs
-      zipWithM_ writeRef names vals
+      zipWithM_ writeBind names vals
       ev body
 
 testEval :: String -> Except InterpException Value
