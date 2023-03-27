@@ -5,6 +5,8 @@ module TypedAst where
 import Control.Exception (Exception)
 import Control.Monad
 import Control.Monad.Except
+import Data.Char (isAlpha)
+import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 
 type Name = String
@@ -29,7 +31,7 @@ data TExpr
   | TFun [TExpr] TExpr
   | TForall [Name] TExpr
   | TVar Name
-  deriving (Show)
+  deriving (Show, Eq, Ord)
 
 data Value
   = VSym Name
@@ -133,7 +135,7 @@ freetyvarsGamma :: Env TExpr -> Set.Set Name
 freetyvarsGamma = foldl (\ftvs (_, ty) -> freetyvars ty `Set.union` ftvs) Set.empty
 
 rename :: [Name] -> [Name] -> TExpr -> TExpr
-rename = undefined
+rename alphas betas tau = tysubst tau (zip alphas $ map TVar betas)
 
 eqType :: TExpr -> TExpr -> Bool
 eqType (TVar a) (TVar a') = a == a'
@@ -232,3 +234,45 @@ typeof expr delta gamma = typ expr
           if name `Set.notMember` freetyvarsGamma gamma
             then return ()
             else throwError $ TypeError "sdg"
+
+tysubst :: TExpr -> Env TExpr -> TExpr
+tysubst tau varenv = subst tau
+  where
+    subst :: TExpr -> TExpr
+    subst (TVar a) = fromMaybe (TVar a) (lookup a varenv)
+    subst (TCons c) = TCons c
+    subst (TApp tau taus) = TApp (subst tau) (map subst taus)
+    subst (TFun taus tau) = TFun (map subst taus) (subst tau)
+    subst (TForall alphas tau) =
+      let free = freetyvars (TForall alphas tau)
+          newTaus = Set.map (subst . TVar) free
+          potentialCaptures = Set.foldl Set.union Set.empty (Set.map freetyvars newTaus)
+          actualCaptures = Set.intersection potentialCaptures (Set.fromList alphas)
+       in if Set.null actualCaptures
+            then TForall alphas (tysubst tau $ zip alphas (map TVar alphas))
+            else subst (renameForallAvoiding alphas tau potentialCaptures)
+
+freshName :: Name -> Set.Set Name -> Name
+freshName alpha avoid =
+  let basename = takeWhile isAlpha alpha
+      candidates = map (\i -> basename ++ "-" ++ show i) nats
+      ok beta = beta `Set.notMember` avoid
+   in head $ filter ok candidates
+
+renameForallAvoiding :: [Name] -> TExpr -> Set.Set Name -> TExpr
+renameForallAvoiding alphas tau captures =
+  let betas =
+        map
+          ( \a ->
+              if a `Set.member` captures
+                then freshName a captures
+                else a
+          )
+          alphas
+   in rename alphas betas tau
+
+instantiate :: TExpr -> [TExpr] -> Env Kind -> Either TypeError TExpr
+instantiate (TForall formals tau) actuals delta = do
+  forM_ actuals (assertGoodType delta)
+  return $ tysubst tau ( zip formals actuals )
+instantiate tau _ _ = throwError $ TypeError "error"
