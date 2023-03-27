@@ -55,6 +55,7 @@ library
         Interp
         Convert
         TypedAst
+        Mono
 
     -- Modules included in this library but not exported.
     -- other-modules:
