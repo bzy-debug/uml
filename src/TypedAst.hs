@@ -275,4 +275,4 @@ instantiate :: TExpr -> [TExpr] -> Env Kind -> Either TypeError TExpr
 instantiate (TForall formals tau) actuals delta = do
   forM_ actuals (assertGoodType delta)
   return $ tysubst tau ( zip formals actuals )
-instantiate tau _ _ = throwError $ TypeError "error"
+instantiate tau _ _ = throwError $ TypeError ("error" ++ show tau)
