@@ -6,25 +6,25 @@ import Ast
 import Control.Monad (liftM2)
 
 embedInt :: Int -> Value
-embedInt = VNum
+embedInt = Num
 
 projectInt :: Value -> Maybe Int
-projectInt (VNum n) = Just n
+projectInt (Num n) = Just n
 projectInt _ = Nothing
 
 embedBool :: Bool -> Value
-embedBool = VBool
+embedBool = Bool
 
 projectBool :: Value -> Bool
-projectBool (VBool False) = False
+projectBool (Bool False) = False
 projectBool _ = True
 
 embedList :: [Value] -> Value
-embedList = foldr VPair VNil
+embedList = foldr Pair Nil
 
 projectList :: Value -> Maybe [Value]
-projectList (VPair car cdr) = liftM2 (:) (Just car) (projectList cdr)
-projectList VNil = Just []
+projectList (Pair car cdr) = liftM2 (:) (Just car) (projectList cdr)
+projectList Nil = Just []
 projectList _ = Nothing
 
 -- embedArith :: (Int -> Int -> Int) -> Value -> Value -> Value

@@ -1,71 +1,68 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+
 module Ast where
 
-import Control.Monad.Except
 import Control.Monad.State
-import qualified Data.Map as Map
 
 type Name = String
 
-type Location = Int
+type TyVar = Name
 
-type Env = Map.Map Name Location
+type TyCon = Name
 
-type Store = Map.Map Location Value
+type Env a = [(Name, a)]
 
-data InterpException
-  = NotFound
-  | ArityError
-  | TypeError
-  deriving (Show)
+type Ref = Int
 
-data InterpState = InterpState
-  { env :: Env,
-    store :: Store,
-    loc :: Int
+data RefState = RefState
+  { mem :: [(Ref, Env Value)],
+    ref :: Ref
   }
 
-data Def
-  = DVal Name Expr
-  | DExpr Expr
-  | DDefine Name [Name] Expr
+newRef :: Env Value -> EvalMonad Ref
+newRef env = do
+  RefState {mem = mem, ref = ref} <- get
+  put $
+    RefState
+      { mem = (ref, env) : mem,
+        ref = ref + 1
+      }
+  return $ ref + 1
 
-type InterpMonad = StateT InterpState (Except InterpException)
+type EvalMonad = StateT RefState (Either String)
 
-data Expr
-  = ELiteral Value
-  | EVar Name
-  | ESet Name Expr
-  | EIfx Expr Expr Expr
-  | EWhilex Expr Expr
-  | EBegin [Expr]
-  | EApply Expr [Expr]
-  | ELetx LetFlavor [(Name, Expr)] Expr
-  | ELambda [Name] Expr
-  deriving (Show)
+data Exp
+  = Literal Value
+  | Var Name
+  | If Exp Exp Exp
+  | Begin [Exp]
+  | Apply Exp [Exp]
+  | Letx LetFlavor [(Name, Exp)] Exp
+  | Lambda [Name] Exp
 
 data LetFlavor = Let | LetRec | LetStar
   deriving (Show)
 
 data Value
-  = VSym Name
-  | VNum Int
-  | VBool Bool
-  | VNil
-  | VPair Value Value
-  | VClosure [Name] Expr Env
-  | VPrimitve Primitive
+  = Sym Name
+  | Num Int
+  | Bool Bool
+  | Nil
+  | Pair Value Value
+  | Closure [Name] Exp Ref
+  | Primitive Primitive
 
-type Primitive = Expr -> [Value] -> InterpMonad Value
+type Primitive = Exp -> [Value] -> EvalMonad Value
 
 instance Show Value where
-  show (VSym v) = v
-  show (VNum n) = show n
-  show (VBool b) = if b then "#t" else "#f"
-  show VNil = "()"
-  show (VPair car cdr) =
-    let tail' (VPair car' cdr') = " " ++ show car' ++ tail' cdr'
-        tail' VNil = ")"
+  show (Sym v) = v
+  show (Num n) = show n
+  show (Bool b) = if b then "#t" else "#f"
+  show Nil = "()"
+  show (Pair car cdr) =
+    let tail' (Pair car' cdr') = " " ++ show car' ++ tail' cdr'
+        tail' Nil = ")"
         tail' v = " . " ++ show v ++ ")"
      in "(" ++ show car ++ tail' cdr
-  show (VClosure {}) = "<closure>"
-  show (VPrimitve _) = "<primitive>"
+  show (Closure {}) = "<closure>"
+  show (Primitive _) = "<primitive>"

@@ -5,68 +5,15 @@
 
 module Mono where
 
-import Control.Monad.State
+import Ast
 import Data.Char
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-
-type Name = String
-
-type TyVar = Name
-
-type TyCon = Name
-
-type Env a = [(Name, a)]
-
-type Ref = Int
-
-data RefState = RefState
-  { mem :: [(Ref, Env Value)],
-    ref :: Ref
-  }
-
-type EvalMonad = StateT RefState (Either String)
-
-newRef :: Env Value -> EvalMonad Ref
-newRef env = do
-  RefState {mem = mem, ref = ref} <- get
-  put $
-    RefState
-      { mem = (ref, env) : mem,
-        ref = ref + 1
-      }
-  return $ ref + 1
-
-data Value
-  = Sym Name
-  | Num Int
-  | Bool Bool
-  | Nil
-  | Pair Value Value
-  | Closure [Name] Exp Ref
-  | Primitive
 
 isList :: Value -> Bool
 isList Nil = True
 isList (Pair _ v') = isList v'
 isList _ = False
-
-data LetFlavor = Let | LetRec | LetStar
-
-data Exp
-  = Literal Value
-  | Var Name
-  | If Exp Exp Exp
-  | Begin [Exp]
-  | Apply Exp [Exp]
-  | Letx LetFlavor [(Name, Exp)] Exp
-  | Lambda [Name] Exp
-
-data Def
-  = Val Name Exp
-  | ValRec Name Exp
-  | Exp Exp
-  | Define Name [Name] Exp
 
 eval :: Exp -> Env Value -> EvalMonad Value
 eval = undefined
