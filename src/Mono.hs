@@ -143,7 +143,6 @@ instantiate (Forall formals tau) actuals =
     then tysubst (zip formals actuals) tau
     else error "Internal error"
 
--- TODO Idempotence
 (|-->) :: Name -> Typ -> Subst
 a |--> (TVar a') = [(a, TVar a') | a /= a']
 a |--> tau = [(a, tau)]
@@ -311,8 +310,16 @@ typeof e gamma =
             (t2, c2) = ty e2
             (t3, c3) = ty e3
          in (t2, c1 :/\ c2 :/\ c3 :/\ t1 :~ boolType :/\ t2 :~ t3)
-      ty (Begin _) = undefined
-      ty (Lambda _ _) = undefined
+      ty (Begin es) =
+        let go [] tau = tau
+            go (e : es) _ = go es (fst (ty e))
+         in (go es unitType, Trivial)
+      ty (Lambda names body) =
+        let alphas = take (length names) freshtyvar
+            schemes = map (Forall []) alphas
+            gamma' = foldr bindtyscheme gamma (zip names schemes)
+            (tau, c) = typeof body gamma'
+         in (funType alphas tau, c)
       ty (Letx Let bs body) =
         let (xs, es) = unzip bs
             (ts, c) = typesof es gamma
@@ -321,5 +328,16 @@ typeof e gamma =
             schemes = [generalize (tysubst theta t) (Set.union (freetyvarsGamma gamma) (freetyvarsCon c')) | t <- ts]
             (tau, cb) = typeof body (foldr bindtyscheme gamma (zip xs schemes))
          in (tau, cb :/\ c')
-      ty (Letx LetRec bs body) = undefined
+      ty (Letx LetRec bs body) =
+        let (xs, es) = unzip bs
+            alphas = take (length xs) freshtyvar
+            schemes = map (Forall []) alphas
+            gamma' = foldr bindtyscheme gamma (zip xs schemes)
+            (taus, cr) = typesof es gamma'
+            c = conjoinCons (cr : zipWith (:~) taus alphas)
+            theta = solve c
+            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- Set.toList $ Set.intersection (dom theta) (freetyvarsGamma gamma)]
+            schemes' = [generalize tau (Set.union (freetyvarsGamma gamma) (freetyvarsCon c')) | tau <- taus]
+            (tau, cb) = typeof body (foldr bindtyscheme gamma (zip xs schemes'))
+         in (tau, c' :/\ cb)
    in ty e
