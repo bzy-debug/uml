@@ -91,16 +91,20 @@ names = surround $ many name
 binds :: Parser [(Name, Expr)]
 binds = surround $ many (surround $ liftM2 (,) name expression)
 
+lambdaBinds :: Parser [(Name, Expr)]
+lambdaBinds = surround $ many (surround $ liftM2 (,) name parseLambda)
+
+parseLambda :: Parser Expr
+parseLambda = surroundBy "lambda" (liftM2 ELambda names expression)
+
 expression :: Parser Expr
 expression =
   try literal
     <|> try variable
-    <|> try (surroundBy "set" (liftM2 ESet name expression))
     <|> try (surroundBy "if" (liftM3 EIfx expression expression expression))
-    <|> try (surroundBy "while" (liftM2 EWhilex expression expression))
     <|> try (surroundBy "begin" (EBegin <$> many expression))
     <|> try (surroundBy "let" (liftM2 (ELetx Let) binds expression))
     <|> try (surroundBy "let*" (liftM2 (ELetx LetStar) binds expression))
-    <|> try (surroundBy "letrec" (liftM2 (ELetx LetRec) binds expression))
+    <|> try (surroundBy "letrec" (liftM2 (ELetx LetRec) lambdaBinds expression))
     <|> try (surroundBy "lambda" (liftM2 ELambda names expression))
     <|> try (surround (liftM2 EApply expression (many expression)))
