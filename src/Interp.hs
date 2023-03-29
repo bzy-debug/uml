@@ -6,113 +6,136 @@ import Ast
 import Control.Monad.Except
 import Control.Monad.State
 import Convert
-import qualified Data.Map as Map
-import Parser
-import Text.Megaparsec
 
-initState :: InterpState
-initState = InterpState {env = Map.empty, store = Map.empty, loc = 0}
-
-newBind :: Name -> Value -> InterpMonad ()
-newBind name value = do
-  InterpState {env = env, store = store, loc = loc} <- get
+newRef :: Env Value -> EvalMonad Ref
+newRef env = do
+  RefState {mem = mem, ref = ref} <- get
   put $
-    InterpState
-      { env = Map.insert name loc env,
-        store = Map.insert loc value store,
-        loc = loc + 1
+    RefState
+      { mem = (ref, env) : mem,
+        ref = ref + 1
       }
+  return $ ref + 1
 
-readBind :: Name -> InterpMonad Value
-readBind name = do
-  InterpState {env = env, store = store} <- get
-  case Map.lookup name env of
-    Nothing -> throwError NotFound
-    Just loc ->
-      case Map.lookup loc store of
-        Nothing -> throwError NotFound
-        Just val -> return val
+writeRef :: Ref -> Env Value -> EvalMonad ()
+writeRef r e = do
+  RefState {mem = mem, ref = ref} <- get
+  put $ RefState {mem = (r, e) : mem, ref = ref}
 
-writeBind :: Name -> Value -> InterpMonad ()
-writeBind name val = do
-  s@InterpState {env = env, store = store} <- get
-  case Map.lookup name env of
-    Nothing -> throwError NotFound
-    Just loc -> put $ s {store = Map.insert loc val store}
+readRef :: Ref -> EvalMonad (Env Value)
+readRef r = do
+  RefState {mem = mem} <- get
+  case lookup r mem of
+    Nothing -> throwError "undefined"
+    Just env -> return env
 
-modifyBind :: Name -> (Value -> Value) -> InterpMonad ()
-modifyBind name f = do
-  val <- readBind name
-  writeBind name (f val)
+eval :: Exp -> Env Value -> EvalMonad Value
+eval e rho =
+  let ev :: Exp -> EvalMonad Value
+      ev (Literal v) = return v
+      ev (Var x) =
+        case lookup x rho of
+          Nothing -> throwError "NotFound"
+          Just v -> return v
+      ev (If cond ifso ifelse) = do
+        condVal <- ev cond
+        ev $ if projectBool condVal then ifso else ifelse
+      ev (Begin exprs) =
+        let iter [] lastval = return lastval
+            iter (e : es) _ = ev e >>= iter es
+         in iter exprs (Bool False)
+      ev (Lambda xs body) = do
+        ref <- newRef rho
+        return $ Closure (xs, body) ref
+      ev e@(Apply fun args) = do
+        funVal <- ev fun
+        case funVal of
+          Primitive prim -> do
+            vals <- mapM ev args
+            prim e vals
+          Closure (formals, body) ref -> do
+            actuals <- mapM ev args
+            if length formals == length actuals
+              then do
+                savedEnv <- readRef ref
+                let extend = zip formals actuals
+                eval body (extend ++ savedEnv)
+              else throwError "BugInTypeInference"
+          _ -> throwError "BugInTypeInference"
+      ev (Letx Let bs body) = do
+        let (names, exps) = unzip bs
+        values <- mapM ev exps
+        eval body (zip names values ++ rho)
+      ev (Letx LetStar bs body) =
+        case bs of
+          [] -> ev body
+          b : bs -> ev (Letx Let [b] (Letx LetStar bs body))
+      ev (Letx LetRec bs body) = do
+        newref <- newRef []
+        let rho' =
+              foldl
+                ( \rho (x, e) ->
+                    (x, Closure (asLambda e) newref) : rho
+                )
+                rho
+                bs
+        _ <- writeRef newref rho'
+        eval body rho'
+        where
+          asLambda :: Exp -> ([Name], Exp)
+          asLambda (Lambda formals body) = (formals, body)
+          asLambda _ = error "InternalError"
+   in ev e
 
-primitives :: [Primitive]
-primitives = []
+-- eval expr = do
+--   s@InterpState {env = curEnv} <- get
+--   res <- ev expr
+--   put s {env = curEnv}
+--   return res
+--   where
+--     ev (ELiteral val) = return val
+--     ev (EVar name) = readBind name
+--     ev (ESet name expr) = do
+--       val <- ev expr
+--       writeBind name val
+--       return val
+--     ev (EIfx cond ifso ifelse) = do
+--       condVal <- ev cond
+--       ev $ if projectBool condVal then ifso else ifelse
+--     ev (EWhilex guard body) = do
+--       guardVal <- ev guard
+--       if projectBool guardVal
+--         then ev body >> ev (EWhilex guard body)
+--         else return $ VBool False
+--     ev (EBegin exprs) = iter exprs (VBool False)
+--       where
+--         iter [] lastVal = return lastVal
+--         iter (e : es) _ = ev e >>= iter es
+--     ev (ELambda names body) = do
+--       InterpState {env = env} <- get
+--       return $ VClosure names body env
+--     ev (ELetx Let binds body) = do
+--       let (names, rhs) = unzip binds
+--       vals <- mapM ev rhs
+--       zipWithM_ newBind names vals
+--       ev body
+--     ev (ELetx LetStar binds body) = do
+--       forM_
+--         binds
+--         ( \(name, rhs) -> do
+--             val <- ev rhs
+--             newBind name val
+--         )
+--       ev body
+--     ev (ELetx LetRec binds body) = do
+--       let (names, rhs) = unzip binds
+--       mapM_ (`newBind` VNil) names
+--       vals <- mapM ev rhs
+--       zipWithM_ writeBind names vals
+--       ev body
 
-eval :: Expr -> InterpMonad Value
-eval expr = do
-  s@InterpState {env = curEnv} <- get
-  res <- ev expr
-  put s {env = curEnv}
-  return res
-  where
-    ev (ELiteral val) = return val
-    ev (EVar name) = readBind name
-    ev (ESet name expr) = do
-      val <- ev expr
-      writeBind name val
-      return val
-    ev (EIfx cond ifso ifelse) = do
-      condVal <- ev cond
-      ev $ if projectBool condVal then ifso else ifelse
-    ev (EWhilex guard body) = do
-      guardVal <- ev guard
-      if projectBool guardVal
-        then ev body >> ev (EWhilex guard body)
-        else return $ VBool False
-    ev (EBegin exprs) = iter exprs (VBool False)
-      where
-        iter [] lastVal = return lastVal
-        iter (e : es) _ = ev e >>= iter es
-    ev (ELambda names body) = do
-      InterpState {env = env} <- get
-      return $ VClosure names body env
-    ev e@(EApply fun args) = do
-      funVal <- ev fun
-      case funVal of
-        VPrimitve prim -> do
-          vals <- mapM ev args
-          prim e vals
-        VClosure formals body savedEnv -> do
-          actuals <- mapM ev args
-          if length formals == length actuals
-            then do
-              modify (\s -> s {env = savedEnv})
-              zipWithM_ newBind formals actuals
-              ev body
-            else throwError ArityError
-        _ -> throwError TypeError
-    ev (ELetx Let binds body) = do
-      let (names, rhs) = unzip binds
-      vals <- mapM ev rhs
-      zipWithM_ newBind names vals
-      ev body
-    ev (ELetx LetStar binds body) = do
-      forM_
-        binds
-        ( \(name, rhs) -> do
-            val <- ev rhs
-            newBind name val
-        )
-      ev body
-    ev (ELetx LetRec binds body) = do
-      let (names, rhs) = unzip binds
-      mapM_ (`newBind` VNil) names
-      vals <- mapM ev rhs
-      zipWithM_ writeBind names vals
-      ev body
-
-testEval :: String -> Except InterpException Value
-testEval s =
-  case parseMaybe expression s of
-    Nothing -> error "Parse error"
-    Just expr -> evalStateT (eval expr) initState
+-- testEval :: String -> Except InterpException Value
+-- testEval s =
+--   case parseMaybe expression s of
+--     Nothing -> error "Parse error"
+--     Just expr -> evalStateT (eval expr) initState

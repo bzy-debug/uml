@@ -15,7 +15,6 @@ data RefState = RefState
     ref :: Ref
   }
 
-
 type EvalMonad = StateT RefState (Either String)
 
 data Exp
@@ -36,7 +35,7 @@ data Value
   | Bool Bool
   | Nil
   | Pair Value Value
-  | Closure [Name] Exp Ref
+  | Closure ([Name], Exp) Ref
   | Primitive Primitive
 
 type Primitive = Exp -> [Value] -> EvalMonad Value
