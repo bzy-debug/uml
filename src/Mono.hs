@@ -46,6 +46,11 @@ data Value
   | Closure [Name] Exp Ref
   | Primitive
 
+isList :: Value -> Bool
+isList Nil = True
+isList (Pair _ v') = isList v'
+isList _ = False
+
 data LetFlavor = Let | LetRec | LetStar
 
 data Exp
@@ -169,8 +174,11 @@ canonicalize (Forall bound ty) =
 nats :: [Int]
 nats = 1 : map (+ 1) nats
 
+tyvars :: [Typ]
+tyvars = map (\i -> TVar $ "'t" ++ show i) nats
+
 freshtyvar :: [Typ]
-freshtyvar = map (\i -> TVar $ "'t" ++ show i) nats
+freshtyvar = undefined
 
 generalize :: Typ -> Set.Set Name -> TypScheme
 generalize tau tyvars =
@@ -181,6 +189,137 @@ generalize tau tyvars =
         tau
     )
 
-freshInstantiate :: TypScheme -> Typ
-freshInstantiate t@(Forall bound _) =
+freshInstance :: TypScheme -> Typ
+freshInstance t@(Forall bound _) =
   instantiate t (take (length bound) freshtyvar)
+
+type TypeEnv = (Env TypScheme, Set.Set Name)
+
+emptyTypeEnv :: TypeEnv
+emptyTypeEnv = ([], Set.empty)
+
+findtyscheme :: Name -> TypeEnv -> TypScheme
+findtyscheme x (gamma, _) =
+  fromMaybe (error "not found") (lookup x gamma)
+
+bindtyscheme :: (Name, TypScheme) -> TypeEnv -> TypeEnv
+bindtyscheme (x, sigma@(Forall bound tau)) (gamma, free) =
+  ( (x, sigma) : gamma,
+    Set.union (Set.difference (freetyvars tau) (Set.fromList bound)) free
+  )
+
+freetyvarsGamma :: TypeEnv -> Set.Set Name
+freetyvarsGamma (_, free) = free
+
+infix 4 :~
+
+infixl 3 :/\
+
+data Con
+  = (:~) Typ Typ
+  | (:/\) Con Con
+  | Trivial
+
+freetyvarsCon :: Con -> Set.Set Name
+freetyvarsCon (t :~ t') = Set.union (freetyvars t) (freetyvars t')
+freetyvarsCon (c :/\ c') = Set.union (freetyvarsCon c) (freetyvarsCon c')
+freetyvarsCon Trivial = Set.empty
+
+consubst :: Subst -> Con -> Con
+consubst theta (tau1 :~ tau2) = tysubst theta tau1 :~ tysubst theta tau2
+consubst theta (c1 :/\ c2) = consubst theta c1 :/\ consubst theta c2
+consubst _ Trivial = Trivial
+
+conjoinCons :: [Con] -> Con
+conjoinCons = foldr (:/\) Trivial
+
+-- conjoinCons [] = Trivial
+-- conjoinCons [c] = c
+-- conjoinCons (c : cs) = c :/\ conjoinCons cs
+
+unstaisfiableEq :: Typ -> Typ -> a
+unstaisfiableEq = undefined
+
+solve :: Con -> Subst
+solve Trivial = []
+solve (c1 :/\ c2) =
+  let s1 = solve c1
+      s2 = solve $ consubst s1 c2
+   in compose s1 s2
+solve (t1 :~ t2) =
+  case (t1, t2) of
+    (TVar x, t2) ->
+      if x `Set.member` freetyvars t2
+        then case t2 of
+          TVar y | x == y -> []
+          _ -> error "cannot unify"
+        else x |--> t2
+    (t1, TVar _) -> solve (t2 :~ t1)
+    (TCon c, TCon c') ->
+      if c == c' then [] else error "cannot unify"
+    (ConApp t ts, ConApp t' ts') ->
+      let con = conjoinCons $ (t :~ t') : zipWith (:~) ts ts'
+       in solve con
+    _ -> error "cannot unify"
+
+isSolved :: Con -> Bool
+isSolved Trivial = True
+isSolved (t :~ t') = t == t'
+isSolved (c :/\ c') = isSolved c && isSolved c'
+
+solves :: Subst -> Con -> Bool
+solves theta c = isSolved $ consubst theta c
+
+typeof :: Exp -> TypeEnv -> (Typ, Con)
+typeof e gamma =
+  let typesof :: [Exp] -> TypeEnv -> ([Typ], Con)
+      typesof [] _ = ([], Trivial)
+      typesof (e : es) gamma =
+        let (tau, c) = typeof e gamma
+            (taus, c') = typesof es gamma
+         in (tau : taus, c :/\ c')
+      literal :: Value -> Typ
+      literal (Sym _) = symType
+      literal (Num _) = intType
+      literal (Bool _) = boolType
+      literal Nil = listType alpha
+      literal val@(Pair v v')
+        | isList val =
+            let t = literal v
+             in case v' of
+                  Nil -> listType t
+                  _ ->
+                    if literal v' == listType t
+                      then listType t
+                      else error "list type not consist"
+      literal (Pair v v') = pairType (literal v) (literal v')
+      literal _ = error "undefined"
+      ty :: Exp -> (Typ, Con)
+      ty (Literal v) = (literal v, Trivial)
+      ty (Var x) = (freshInstance (findtyscheme x gamma), Trivial)
+      ty (Apply f actuals) =
+        case typesof (f : actuals) gamma of
+          ([], _) -> error "pattern match"
+          (funty : actualtypes, c) ->
+            let rettype = head freshtyvar
+             in (rettype, c :/\ (funty :~ funType actualtypes rettype))
+      ty (Letx LetStar [] body) = ty body
+      ty (Letx LetStar (b : bs) body) =
+        ty (Letx Let [b] (Letx LetStar bs body))
+      ty (If e1 e2 e3) =
+        let (t1, c1) = ty e1
+            (t2, c2) = ty e2
+            (t3, c3) = ty e3
+         in (t2, c1 :/\ c2 :/\ c3 :/\ t1 :~ boolType :/\ t2 :~ t3)
+      ty (Begin _) = undefined
+      ty (Lambda _ _) = undefined
+      ty (Letx Let bs body) =
+        let (xs, es) = unzip bs
+            (ts, c) = typesof es gamma
+            theta = solve c
+            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- Set.toList $ Set.intersection (dom theta) (freetyvarsGamma gamma)]
+            schemes = [generalize (tysubst theta t) (Set.union (freetyvarsGamma gamma) (freetyvarsCon c')) | t <- ts]
+            (tau, cb) = typeof body (foldr bindtyscheme gamma (zip xs schemes))
+         in (tau, cb :/\ c')
+      ty (Letx LetRec bs body) = undefined
+   in ty e
