@@ -7,16 +7,17 @@ module Mono where
 
 import Ast
 import Data.Char
+import Data.List
 import Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
 
 isList :: Value -> Bool
 isList Nil = True
 isList (Pair _ v') = isList v'
 isList _ = False
 
-eval :: Exp -> Env Value -> EvalMonad Value
-eval = undefined
+type TyVar = Name
+
+type TyCon = Name
 
 data Typ
   = TVar TyVar
@@ -63,8 +64,8 @@ data TypScheme = Forall [Name] Typ deriving (Show)
 
 type Subst = Env Typ
 
-dom :: Subst -> Set.Set Name
-dom theta = Set.fromList $ map fst theta
+dom :: Subst -> [Name]
+dom theta = nub $ map fst theta
 
 varsubst :: Subst -> (Name -> Typ)
 varsubst theta =
@@ -80,7 +81,7 @@ tysubst theta = subst
 
 compose :: Subst -> Subst -> Subst
 compose theta1 theta2 =
-  let domain = Set.toList $ Set.union (dom theta1) (dom theta2)
+  let domain = dom theta1 `union` dom theta2
       replace = tysubst theta1 . varsubst theta2
    in zip domain (map replace domain)
 
@@ -94,10 +95,10 @@ instantiate (Forall formals tau) actuals =
 a |--> (TVar a') = [(a, TVar a') | a /= a']
 a |--> tau = [(a, tau)]
 
-freetyvars :: Typ -> Set.Set Name
-freetyvars (TVar a) = Set.singleton a
-freetyvars (TCon _) = Set.empty
-freetyvars (ConApp ty tys) = Set.unions $ freetyvars ty : map freetyvars tys
+freetyvars :: Typ -> [Name]
+freetyvars (TVar a) = [a]
+freetyvars (TCon _) = []
+freetyvars (ConApp ty tys) = (nub . concat) $ freetyvars ty : map freetyvars tys
 
 canonicalize :: TypScheme -> TypScheme
 canonicalize (Forall bound ty) =
@@ -105,9 +106,9 @@ canonicalize (Forall bound ty) =
         if n < 26
           then ['\'', chr (ord 'a' + n)]
           else "'v" ++ show (n - 25)
-      free = Set.difference (freetyvars ty) (Set.fromList bound)
+      free = freetyvars ty \\ bound
       unusedIndex n =
-        if Set.member (canonicalTyvarName n) free
+        if canonicalTyvarName n `elem` free
           then unusedIndex (n + 1)
           else n
       newBoundVars _ [] = []
@@ -126,11 +127,11 @@ tyvars = map (\i -> TVar $ "'t" ++ show i) nats
 freshtyvar :: [Typ]
 freshtyvar = undefined
 
-generalize :: Typ -> Set.Set Name -> TypScheme
+generalize :: Typ -> [Name] -> TypScheme
 generalize tau tyvars =
   canonicalize
     ( Forall
-        ( Set.toList $ Set.difference (freetyvars tau) tyvars
+        ( freetyvars tau \\ tyvars
         )
         tau
     )
@@ -139,10 +140,10 @@ freshInstance :: TypScheme -> Typ
 freshInstance t@(Forall bound _) =
   instantiate t (take (length bound) freshtyvar)
 
-type TypeEnv = (Env TypScheme, Set.Set Name)
+type TypeEnv = (Env TypScheme, [Name])
 
 emptyTypeEnv :: TypeEnv
-emptyTypeEnv = ([], Set.empty)
+emptyTypeEnv = ([], [])
 
 findtyscheme :: Name -> TypeEnv -> TypScheme
 findtyscheme x (gamma, _) =
@@ -151,10 +152,10 @@ findtyscheme x (gamma, _) =
 bindtyscheme :: (Name, TypScheme) -> TypeEnv -> TypeEnv
 bindtyscheme (x, sigma@(Forall bound tau)) (gamma, free) =
   ( (x, sigma) : gamma,
-    Set.union (Set.difference (freetyvars tau) (Set.fromList bound)) free
+    (freetyvars tau \\ bound) `union` free
   )
 
-freetyvarsGamma :: TypeEnv -> Set.Set Name
+freetyvarsGamma :: TypeEnv -> [Name]
 freetyvarsGamma (_, free) = free
 
 infix 4 :~
@@ -166,10 +167,10 @@ data Con
   | (:/\) Con Con
   | Trivial
 
-freetyvarsCon :: Con -> Set.Set Name
-freetyvarsCon (t :~ t') = Set.union (freetyvars t) (freetyvars t')
-freetyvarsCon (c :/\ c') = Set.union (freetyvarsCon c) (freetyvarsCon c')
-freetyvarsCon Trivial = Set.empty
+freetyvarsCon :: Con -> [Name]
+freetyvarsCon (t :~ t') = freetyvars t `union` freetyvars t'
+freetyvarsCon (c :/\ c') = freetyvarsCon c `union` freetyvarsCon c'
+freetyvarsCon Trivial = []
 
 consubst :: Subst -> Con -> Con
 consubst theta (tau1 :~ tau2) = tysubst theta tau1 :~ tysubst theta tau2
@@ -195,7 +196,7 @@ solve (c1 :/\ c2) =
 solve (t1 :~ t2) =
   case (t1, t2) of
     (TVar x, t2) ->
-      if x `Set.member` freetyvars t2
+      if x `elem` freetyvars t2
         then case t2 of
           TVar y | x == y -> []
           _ -> error "cannot unify"
@@ -271,8 +272,8 @@ typeof e gamma =
         let (xs, es) = unzip bs
             (ts, c) = typesof es gamma
             theta = solve c
-            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- Set.toList $ Set.intersection (dom theta) (freetyvarsGamma gamma)]
-            schemes = [generalize (tysubst theta t) (Set.union (freetyvarsGamma gamma) (freetyvarsCon c')) | t <- ts]
+            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
+            schemes = [generalize (tysubst theta t) (freetyvarsGamma gamma `union` freetyvarsCon c') | t <- ts]
             (tau, cb) = typeof body (foldr bindtyscheme gamma (zip xs schemes))
          in (tau, cb :/\ c')
       ty (Letx LetRec bs body) =
@@ -283,8 +284,8 @@ typeof e gamma =
             (taus, cr) = typesof es gamma'
             c = conjoinCons (cr : zipWith (:~) taus alphas)
             theta = solve c
-            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- Set.toList $ Set.intersection (dom theta) (freetyvarsGamma gamma)]
-            schemes' = [generalize tau (Set.union (freetyvarsGamma gamma) (freetyvarsCon c')) | tau <- taus]
+            c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
+            schemes' = [generalize tau (freetyvarsGamma gamma `union` freetyvarsCon c') | tau <- taus]
             (tau, cb) = typeof body (foldr bindtyscheme gamma (zip xs schemes'))
          in (tau, c' :/\ cb)
    in ty e

@@ -6,10 +6,6 @@ import Control.Monad.State
 
 type Name = String
 
-type TyVar = Name
-
-type TyCon = Name
-
 type Env a = [(Name, a)]
 
 type Ref = Int
@@ -19,15 +15,6 @@ data RefState = RefState
     ref :: Ref
   }
 
-newRef :: Env Value -> EvalMonad Ref
-newRef env = do
-  RefState {mem = mem, ref = ref} <- get
-  put $
-    RefState
-      { mem = (ref, env) : mem,
-        ref = ref + 1
-      }
-  return $ ref + 1
 
 type EvalMonad = StateT RefState (Either String)
 
