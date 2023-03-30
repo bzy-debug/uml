@@ -6,8 +6,8 @@
 module Type where
 
 import Ast
+import Data.Char
 import Data.List
-import Data.Maybe
 
 type TyVar = Name
 
@@ -27,8 +27,10 @@ dom :: Subst -> [Name]
 dom theta = nub $ map fst theta
 
 varsubst :: Subst -> (Name -> Type)
-varsubst theta =
-  \a -> fromMaybe (TVar a) (lookup a theta)
+varsubst theta a =
+  case lookup a theta of
+    Nothing -> TVar a
+    Just tau -> tysubst theta tau
 
 tysubst :: Subst -> Type -> Type
 tysubst theta = subst
@@ -52,6 +54,33 @@ freetyvars :: Type -> [Name]
 freetyvars (TVar a) = [a]
 freetyvars (TCon _) = []
 freetyvars (ConApp ty tys) = (nub . concat) $ freetyvars ty : map freetyvars tys
+
+generalize :: Type -> [Name] -> TypScheme
+generalize tau tyvars =
+  canonicalize
+    ( Forall
+        ( freetyvars tau \\ tyvars
+        )
+        tau
+    )
+
+canonicalize :: TypScheme -> TypScheme
+canonicalize (Forall bound ty) =
+  let canonicalTyvarName n =
+        if n < 26
+          then ['\'', chr (ord 'a' + n)]
+          else "'v" ++ show (n - 25)
+      free = freetyvars ty \\ bound
+      unusedIndex n =
+        if canonicalTyvarName n `elem` free
+          then unusedIndex (n + 1)
+          else n
+      newBoundVars _ [] = []
+      newBoundVars index (_ : oldvars) =
+        let n = unusedIndex index
+         in canonicalTyvarName n : newBoundVars (n + 1) oldvars
+      newBound = newBoundVars 0 bound
+   in Forall newBound (tysubst (zip bound (map TVar newBound)) ty)
 
 intType :: Type
 intType = TCon "int"

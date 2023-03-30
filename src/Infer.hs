@@ -9,64 +9,12 @@ module Infer where
 import Ast
 import Control.Monad.Except
 import Control.Monad.State
-import Data.Char
 import Data.List
+import Parser
+import Text.Megaparsec (parseMaybe)
 import Type
 
 type InferMonad = StateT Int (Either String)
-
-freshtyvar :: InferMonad Type
-freshtyvar = do
-  i <- get
-  let tau = TVar $ "'t" ++ show i
-  put $ i + 1
-  return tau
-
-freshtyvars :: Int -> InferMonad [Type]
-freshtyvars n = replicateM n freshtyvar
-
-isList :: Value -> Bool
-isList Nil = True
-isList (Pair _ v') = isList v'
-isList _ = False
-
-generalize :: Type -> [Name] -> TypScheme
-generalize tau tyvars =
-  canonicalize
-    ( Forall
-        ( freetyvars tau \\ tyvars
-        )
-        tau
-    )
-
-canonicalize :: TypScheme -> TypScheme
-canonicalize (Forall bound ty) =
-  let canonicalTyvarName n =
-        if n < 26
-          then ['\'', chr (ord 'a' + n)]
-          else "'v" ++ show (n - 25)
-      free = freetyvars ty \\ bound
-      unusedIndex n =
-        if canonicalTyvarName n `elem` free
-          then unusedIndex (n + 1)
-          else n
-      newBoundVars _ [] = []
-      newBoundVars index (_ : oldvars) =
-        let n = unusedIndex index
-         in canonicalTyvarName n : newBoundVars (n + 1) oldvars
-      newBound = newBoundVars 0 bound
-   in Forall newBound (tysubst (zip bound (map TVar newBound)) ty)
-
-instantiate :: TypScheme -> [Type] -> InferMonad Type
-instantiate (Forall formals tau) actuals =
-  if length formals == length actuals
-    then return $ tysubst (zip formals actuals) tau
-    else throwError "InternalError"
-
-freshInstance :: TypScheme -> InferMonad Type
-freshInstance t@(Forall bound _) = do
-  xs <- freshtyvars (length bound)
-  instantiate t xs
 
 type TypeEnv = (Env TypScheme, [Name])
 
@@ -88,6 +36,27 @@ bindtyscheme (x, sigma@(Forall bound tau)) (gamma, free) =
 freetyvarsGamma :: TypeEnv -> [Name]
 freetyvarsGamma (_, free) = free
 
+freshtyvar :: InferMonad Type
+freshtyvar = do
+  i <- get
+  let tau = TVar $ "'t" ++ show i
+  put $ i + 1
+  return tau
+
+freshtyvars :: Int -> InferMonad [Type]
+freshtyvars n = replicateM n freshtyvar
+
+instantiate :: TypScheme -> [Type] -> InferMonad Type
+instantiate (Forall formals tau) actuals =
+  if length formals == length actuals
+    then return $ tysubst (zip formals actuals) tau
+    else throwError "InternalError"
+
+freshInstance :: TypScheme -> InferMonad Type
+freshInstance t@(Forall bound _) = do
+  xs <- freshtyvars (length bound)
+  instantiate t xs
+
 infix 4 :~
 
 infixl 3 :/\
@@ -96,6 +65,21 @@ data Con
   = (:~) Type Type
   | (:/\) Con Con
   | Trivial
+
+instance Show Con where
+  show = show' . untriviate
+    where
+      show' (c :/\ c') = show c ++ "/\\" ++ show c'
+      show' (t :~ t') = show t ++ "~" ++ show t'
+      show' Trivial = "T"
+
+untriviate :: Con -> Con
+untriviate (c :/\ c') =
+  case (untriviate c, untriviate c') of
+    (Trivial, c) -> c
+    (c, Trivial) -> c
+    (c, c') -> c :/\ c'
+untriviate atom = atom
 
 freetyvarsCon :: Con -> [Name]
 freetyvarsCon (t :~ t') = freetyvars t `union` freetyvars t'
@@ -113,7 +97,7 @@ conjoinCons = foldr (:/\) Trivial
 unstaisfiableEq :: Type -> Type -> a
 unstaisfiableEq = undefined
 
-solve :: Con -> InferMonad Subst
+solve :: Con -> Either String Subst
 solve Trivial = return []
 solve (c1 :/\ c2) = do
   s1 <- solve c1
@@ -153,6 +137,12 @@ typeof e gamma =
         (tau, c) <- typeof e gamma
         (taus, c') <- typesof es gamma
         return (tau : taus, c :/\ c')
+
+      isList :: Value -> Bool
+      isList Nil = True
+      isList (Pair _ v') = isList v'
+      isList _ = False
+
       literal :: Value -> InferMonad Type
       literal (Sym _) = return symType
       literal (Num _) = return intType
@@ -173,6 +163,7 @@ typeof e gamma =
         t' <- literal v'
         return $ pairType t t'
       literal _ = throwError "undefined"
+
       ty :: Exp -> InferMonad (Type, Con)
       ty (Literal v) = literal v >>= \t -> return (t, Trivial)
       ty (Var x) = do
@@ -209,11 +200,13 @@ typeof e gamma =
       ty (Letx Let bs body) = do
         let (xs, es) = unzip bs
         (ts, c) <- typesof es gamma
-        theta <- solve c
-        let c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
-        let schemes = [generalize (tysubst theta t) (freetyvarsGamma gamma `union` freetyvarsCon c') | t <- ts]
-        (tau, cb) <- typeof body (foldr bindtyscheme gamma (zip xs schemes))
-        return (tau, cb :/\ c')
+        case solve c of
+          Left err -> throwError err
+          Right theta -> do
+            let c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
+            let schemes = [generalize (tysubst theta t) (freetyvarsGamma gamma `union` freetyvarsCon c') | t <- ts]
+            (tau, cb) <- typeof body (foldr bindtyscheme gamma (zip xs schemes))
+            return (tau, cb :/\ c')
       ty (Letx LetRec bs body) = do
         let (xs, es) = unzip bs
         alphas <- freshtyvars (length xs)
@@ -221,9 +214,40 @@ typeof e gamma =
         let gamma' = foldr bindtyscheme gamma (zip xs schemes)
         (taus, cr) <- typesof es gamma'
         let c = conjoinCons (cr : zipWith (:~) taus alphas)
-        theta <- solve c
-        let c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
-        let schemes' = [generalize tau (freetyvarsGamma gamma `union` freetyvarsCon c') | tau <- taus]
-        (tau, cb) <- typeof body (foldr bindtyscheme gamma (zip xs schemes'))
-        return (tau, c' :/\ cb)
+        case solve c of
+          Left err -> throwError err
+          Right theta -> do
+            let c' = conjoinCons [TVar a :~ tysubst theta (TVar a) | a <- dom theta `intersect` freetyvarsGamma gamma]
+            let schemes' = [generalize tau (freetyvarsGamma gamma `union` freetyvarsCon c') | tau <- taus]
+            (tau, cb) <- typeof body (foldr bindtyscheme gamma (zip xs schemes'))
+            return (tau, c' :/\ cb)
    in ty e
+
+infer :: Exp -> Either String TypScheme
+infer exp = do
+  (typ, con) <- evalStateT (typeof exp emptyTypeEnv) 0
+  theta <- solve con
+  return $ generalize (tysubst theta typ) []
+
+testInfer :: String -> Either String TypScheme
+testInfer s =
+  case parseMaybe expression s of
+    Nothing -> error "parseError"
+    Just exp -> infer exp
+
+test :: String -> IO ()
+test s =
+  case parseMaybe expression s of
+    Nothing -> putStrLn "parseError"
+    Just exp -> do
+      case evalStateT (typeof exp emptyTypeEnv) 0 of
+        Left err -> putStrLn err
+        Right (tau, con) -> do
+          print tau
+          case solve con of
+            Left err -> putStrLn err
+            Right theta -> do
+              print theta
+              print $ tysubst theta tau
+
+-- return $ tysubst theta typ

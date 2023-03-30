@@ -27,7 +27,29 @@ data Exp
   | Lambda [Name] Exp
 
 data LetFlavor = Let | LetRec | LetStar
-  deriving (Show)
+
+instance Show Exp where
+  show e =
+    case e of
+      Literal v -> show v
+      Var x -> x
+      If e1 e2 e3 -> parenSpace $ "if" : exps [e1, e2, e3]
+      Begin es -> parenSpace $ "begin" : exps es
+      Apply e es -> parenSpace $ exps (e : es)
+      Letx lk bs e -> parenSpace [show lk, bindings bs, show e]
+      Lambda xs body -> parenSpace ["lambda", parenSpace xs, show body]
+    where
+      paren s = "(" ++ s ++ ")"
+      bracket s = "[" ++ s ++ "]"
+      parenSpace = paren . unwords
+      exps = map show
+      binding (x, e) = bracket $ x ++ " " ++ show e
+      bindings bs = (paren . unwords) (map binding bs)
+
+instance Show LetFlavor where
+  show Let = "let"
+  show LetRec = "letrec"
+  show LetStar = "let*"
 
 data Value
   = Sym Name
