@@ -5,7 +5,7 @@ module Interp where
 import Ast
 import Control.Monad.Except (throwError)
 import Control.Monad.Reader (ask, local, runReaderT)
-import Control.Monad.State (get, put, evalStateT)
+import Control.Monad.State (evalStateT, get, put)
 import Convert
 
 initialState :: RefEnv
@@ -52,7 +52,7 @@ eval (If cond ifso ifelse) = do
 eval (Begin exps) =
   let iter [] lastVal = lastVal
       iter (e : es) _ = iter es (eval e)
-   in iter exps (return Unit)
+   in iter exps (return $ Bool False)
 eval (Apply fun args) = do
   funVal <- eval fun
   case funVal of

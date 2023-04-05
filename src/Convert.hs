@@ -29,52 +29,56 @@ projectList (Pair car cdr) = liftM2 (:) (Just car) (projectList cdr)
 projectList Nil = Just []
 projectList _ = Nothing
 
-unaryOp :: (Value -> Value) -> [Value] -> EvalMonad Value
-unaryOp f [a] = return $ f a
+unaryOp :: (Value -> EvalMonad Value) -> Primitive
+unaryOp f [a] = f a
 unaryOp f args = throwError "BugInTypeInference: unary arity error"
 
-binaryOp :: (Value -> Value -> Value) -> [Value] -> EvalMonad Value
-binaryOp f [a, b] = return $ f a b
+binaryOp :: (Value -> Value -> EvalMonad Value) -> Primitive
+binaryOp f [a, b] = f a b
 binaryOp f args = throwError "BugInTypeInference: binary arity error"
 
-arithOp :: (Int -> Int -> Int) -> ([Value] -> EvalMonad Value)
+arithOp :: (Int -> Int -> Int) -> Primitive
 arithOp f = binaryOp f'
   where
-    f' (Num n1) (Num n2) = Num (f n1 n2)
-    f' _ _ = error "BugInTypeInference: arithmetic operation on non-number value"
+    f' :: Value -> Value -> EvalMonad Value
+    f' (Num n1) (Num n2) = return $ Num (f n1 n2)
+    f' _ _ = throwError "BugInTypeInference: arithmetic operation on non-number value"
 
 arithType :: Type
 arithType = funType [intType, intType] intType
 
-comparison :: (Value -> Value -> Bool) -> [Value] -> EvalMonad Value
-comparison f = binaryOp (\v1 v2 -> embedBool (f v1 v2))
-
-intCompare :: (Int -> Int -> Bool) -> [Value] -> EvalMonad Value
-intCompare f = comparison f'
+comparison :: (Value -> Value -> EvalMonad Bool) -> Primitive
+comparison f = binaryOp f'
   where
-    f' (Num n1) (Num n2) = f n1 n2
-    f' _ _ = error "BugInTypeInference: arithmetic comparision on non-number value"
+    f' :: Value -> Value -> EvalMonad Value
+    f' v1 v2 = embedBool <$> f v1 v2
+
+intCompare :: (Int -> Int -> Bool) -> Primitive
+intCompare f = binaryOp f'
+  where
+    f' :: Value -> Value -> EvalMonad Value
+    f' (Num n1) (Num n2) = return . embedBool $ f n1 n2
+    f' _ _ = throwError "BugInTypeInference: arithmetic comparision on non-number value"
 
 compType :: Type -> Type
 compType x = funType [x, x] boolType
 
-primitiveEqual :: Value -> Value -> Bool
+primitiveEqual :: Value -> Value -> EvalMonad Bool
 primitiveEqual v v' =
-  let noFun = error "compare function for equality"
+  let noFun = throwError "compare function for equality"
    in case (v, v') of
-        (Nil, Nil) -> True
-        (Num n1, Num n2) -> n1 == n2
-        (Sym v1, Sym v2) -> v1 == v2
-        (Bool b1, Bool b2) -> b1 == b2
-        (Pair v vs, Pair v' vs') ->
-          primitiveEqual v v' && primitiveEqual vs vs'
-        (Pair _ _, Nil) -> False
-        (Nil, Pair _ _) -> False
+        (Nil, Nil) -> return True
+        (Num n1, Num n2) -> return $ n1 == n2
+        (Sym v1, Sym v2) -> return $ v1 == v2
+        (Bool b1, Bool b2) -> return $ b1 == b2
+        (Pair v vs, Pair v' vs') -> liftM2 (&&) (primitiveEqual v v') (primitiveEqual vs vs')
+        (Pair _ _, Nil) -> return False
+        (Nil, Pair _ _) -> return False
         (Closure {}, _) -> noFun
         (Primitive {}, _) -> noFun
         (_, Closure {}) -> noFun
         (_, Primitive {}) -> noFun
-        _ -> error "BugInTypeInference"
+        _ -> throwError "BugInTypeInference: compare"
 
 primitives :: [(String, Primitive, Type)]
 primitives =
@@ -85,13 +89,15 @@ primitives =
     ("<", intCompare (<), compType intType),
     (">", intCompare (>), compType intType),
     ("=", comparison primitiveEqual, compType alpha),
-    ("cons", binaryOp Pair, funType [alpha, listType alpha] (listType alpha)),
+    ("cons", binaryOp pair, funType [alpha, listType alpha] (listType alpha)),
     ("car", unaryOp carf, funType [listType alpha] alpha),
     ("cdr", unaryOp cdrf, funType [listType alpha] (listType alpha))
   ]
   where
-    carf (Pair car _) = car
-    carf _ = error "RuntimeError: car"
-
-    cdrf (Pair _ cdr) = cdr
-    cdrf _ = error "RuntimeError: cdr"
+    pair v v' = return $ Pair v v'
+    carf :: Value -> EvalMonad Value
+    carf (Pair car _) = return car
+    carf _ = throwError "RuntimeError: car"
+    cdrf :: Value -> EvalMonad Value
+    cdrf (Pair _ cdr) = return cdr
+    cdrf _ = throwError "RuntimeError: cdr"

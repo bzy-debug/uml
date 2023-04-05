@@ -2,8 +2,8 @@
 
 module Ast where
 
-import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.State
 
 type Name = String
 
@@ -64,7 +64,6 @@ data Value
   | Bool Bool
   | Nil
   | Pair Value Value
-  | Unit
   | Closure ([Name], Exp) Ref
   | Primitive Primitive
 
@@ -74,12 +73,11 @@ instance Show Value where
   show (Sym v) = v
   show (Num n) = show n
   show (Bool b) = if b then "#t" else "#f"
-  show Nil = "nil"
+  show Nil = "()"
   show (Pair car cdr) =
     let tail' (Pair car' cdr') = " " ++ show car' ++ tail' cdr'
         tail' Nil = ")"
         tail' v = " . " ++ show v ++ ")"
      in "(" ++ show car ++ tail' cdr
-  show Unit = "()"
   show (Closure {}) = "<closure>"
   show (Primitive _) = "<primitive>"
