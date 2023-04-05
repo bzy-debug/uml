@@ -3,86 +3,94 @@
 module Interp where
 
 import Ast
-import Control.Monad.Except
-import Control.Monad.State
+import Control.Monad.Except (throwError)
+import Control.Monad.Reader (ask, local, runReaderT)
+import Control.Monad.State (get, put, evalStateT)
 import Convert
+
+initialState :: RefEnv
+initialState = RefEnv {ref = 0, mem = []}
+
+primitiveEnv :: Env Value
+primitiveEnv = map (\(name, prim, _) -> (name, Primitive prim)) primitives
 
 newRef :: Env Value -> EvalMonad Ref
 newRef env = do
-  RefState {mem = mem, ref = ref} <- get
+  RefEnv {mem = mem, ref = ref} <- get
   put $
-    RefState
+    RefEnv
       { mem = (ref, env) : mem,
         ref = ref + 1
       }
-  return $ ref + 1
+  return ref
 
 writeRef :: Ref -> Env Value -> EvalMonad ()
 writeRef r e = do
-  RefState {mem = mem, ref = ref} <- get
-  put $ RefState {mem = (r, e) : mem, ref = ref}
+  RefEnv {mem = mem, ref = ref} <- get
+  put $ RefEnv {mem = (r, e) : mem, ref = ref}
 
 readRef :: Ref -> EvalMonad (Env Value)
 readRef r = do
-  RefState {mem = mem} <- get
+  RefEnv {mem = mem} <- get
   case lookup r mem of
-    Nothing -> throwError "undefined"
+    Nothing -> throwError "NotFound"
     Just env -> return env
 
-eval :: Exp -> Env Value -> EvalMonad Value
-eval e rho =
-  let ev :: Exp -> EvalMonad Value
-      ev (Literal v) = return v
-      ev (Var x) =
-        case lookup x rho of
-          Nothing -> throwError "NotFound"
-          Just v -> return v
-      ev (If cond ifso ifelse) = do
-        condVal <- ev cond
-        ev $ if projectBool condVal then ifso else ifelse
-      ev (Begin exprs) =
-        let iter [] lastval = return lastval
-            iter (e : es) _ = ev e >>= iter es
-         in iter exprs (Bool False)
-      ev (Lambda xs body) = do
-        ref <- newRef rho
-        return $ Closure (xs, body) ref
-      ev e@(Apply fun args) = do
-        funVal <- ev fun
-        case funVal of
-          Primitive prim -> do
-            vals <- mapM ev args
-            prim e vals
-          Closure (formals, body) ref -> do
-            actuals <- mapM ev args
-            if length formals == length actuals
-              then do
-                savedEnv <- readRef ref
-                let extend = zip formals actuals
-                eval body (extend ++ savedEnv)
-              else throwError "BugInTypeInference"
-          _ -> throwError "BugInTypeInference"
-      ev (Letx Let bs body) = do
+lookupEnv :: Name -> EvalMonad Value
+lookupEnv x = do
+  env <- ask
+  case lookup x env of
+    Nothing -> throwError $ "NotFound: " ++ x
+    Just v -> return v
+
+eval :: Exp -> EvalMonad Value
+eval (Literal v) = return v
+eval (Var x) = lookupEnv x
+eval (If cond ifso ifelse) = do
+  condVal <- eval cond
+  eval $ if projectBool condVal then ifso else ifelse
+eval (Begin exps) =
+  let iter [] lastVal = lastVal
+      iter (e : es) _ = iter es (eval e)
+   in iter exps (return Unit)
+eval (Apply fun args) = do
+  funVal <- eval fun
+  case funVal of
+    Primitive prim -> do
+      actuals <- mapM eval args
+      prim actuals
+    Closure (formals, body) ref -> do
+      env <- readRef ref
+      actuals <- mapM eval args
+      local (\_ -> binds formals actuals env) (eval body)
+    _ -> throwError "BugInTypInference: apply non-function"
+eval (Letx Let bs body) = do
+  let (names, exps) = unzip bs
+  values <- mapM eval exps
+  local (binds names values) (eval body)
+eval (Letx LetStar bs body) =
+  case bs of
+    [] -> eval body
+    b : bs -> eval (Letx Let [b] (Letx LetStar bs body))
+eval (Letx LetRec bs body) =
+  let asLambda :: Exp -> EvalMonad ([Name], Exp)
+      asLambda (Lambda formals body) = return (formals, body)
+      asLambda _ = throwError "ParseError: rhs of letrec should be lambda"
+   in do
         let (names, exps) = unzip bs
-        values <- mapM ev exps
-        eval body (zip names values ++ rho)
-      ev (Letx LetStar bs body) =
-        case bs of
-          [] -> ev body
-          b : bs -> ev (Letx Let [b] (Letx LetStar bs body))
-      ev (Letx LetRec bs body) = do
-        newref <- newRef []
-        let rho' =
-              foldl
-                ( \rho (x, e) ->
-                    (x, Closure (asLambda e) newref) : rho
-                )
-                rho
-                bs
-        _ <- writeRef newref rho'
-        eval body rho'
-        where
-          asLambda :: Exp -> ([Name], Exp)
-          asLambda (Lambda formals body) = (formals, body)
-          asLambda _ = error "InternalError"
-   in ev e
+        lambdas <- mapM asLambda exps
+        env <- ask
+        envRef <- newRef env
+        let closures = map (`Closure` envRef) lambdas
+        let newEnv = binds names closures env
+        writeRef envRef newEnv
+        local (const newEnv) (eval body)
+eval (Lambda formals body) = do
+  env <- ask
+  ref <- newRef env
+  return $ Closure (formals, body) ref
+
+eval' :: Exp -> Either String String
+eval' e = case evalStateT (runReaderT (eval e) primitiveEnv) initialState of
+  Left err -> Left err
+  Right v -> Right $ show v

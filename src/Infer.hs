@@ -9,6 +9,7 @@ module Infer where
 import Ast
 import Control.Monad.Except
 import Control.Monad.State
+import Convert
 import Data.List
 import Parser
 import Text.Megaparsec (parseMaybe)
@@ -223,9 +224,12 @@ typeof e gamma =
             return (tau, c' :/\ cb)
    in ty e
 
+initialTypeEnv :: TypeEnv
+initialTypeEnv = (map (\(name, _, typ) -> (name, generalize typ [])) primitives, [])
+
 infer :: Exp -> Either String TypScheme
 infer exp = do
-  (typ, con) <- evalStateT (typeof exp emptyTypeEnv) 0
+  (typ, con) <- evalStateT (typeof exp initialTypeEnv) 0
   theta <- solve con
   return $ generalize (tysubst theta typ) []
 

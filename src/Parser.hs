@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+
 module Parser where
 
 import Ast
@@ -85,8 +87,8 @@ literal =
 names :: Parser [Name]
 names = surround $ many name
 
-binds :: Parser [(Name, Exp)]
-binds = surround $ many (surround $ liftM2 (,) name expression)
+bindings :: Parser [(Name, Exp)]
+bindings = surround $ many (surround $ liftM2 (,) name expression)
 
 expression :: Parser Exp
 expression =
@@ -94,8 +96,14 @@ expression =
     <|> try variable
     <|> try (surroundBy "if" (liftM3 If expression expression expression))
     <|> try (surroundBy "begin" (Begin <$> many expression))
-    <|> try (surroundBy "let" (liftM2 (Letx Let) binds expression))
-    <|> try (surroundBy "let*" (liftM2 (Letx LetStar) binds expression))
-    <|> try (surroundBy "letrec" (liftM2 (Letx LetRec) binds expression))
+    <|> try (surroundBy "let" (liftM2 (Letx Let) bindings expression))
+    <|> try (surroundBy "let*" (liftM2 (Letx LetStar) bindings expression))
+    <|> try (surroundBy "letrec" (liftM2 (Letx LetRec) bindings expression))
     <|> try (surroundBy "lambda" (liftM2 Lambda names expression))
     <|> try (surround (liftM2 Apply expression (many expression)))
+
+replParse :: String -> Exp
+replParse s =
+  case runParser expression "stdin" s of
+    Left err -> error (show err)
+    Right exp -> exp

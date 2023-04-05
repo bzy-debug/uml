@@ -3,19 +3,26 @@
 module Ast where
 
 import Control.Monad.State
+import Control.Monad.Reader
 
 type Name = String
 
 type Env a = [(Name, a)]
 
+bind :: Name -> Value -> Env Value -> Env Value
+bind x v env = (x, v) : env
+
+binds :: [Name] -> [Value] -> Env Value -> Env Value
+binds names vals env = zip names vals ++ env
+
 type Ref = Int
 
-data RefState = RefState
+data RefEnv = RefEnv
   { mem :: [(Ref, Env Value)],
     ref :: Ref
   }
 
-type EvalMonad = StateT RefState (Either String)
+type EvalMonad = ReaderT (Env Value) (StateT RefEnv (Either String))
 
 data Exp
   = Literal Value
@@ -57,20 +64,22 @@ data Value
   | Bool Bool
   | Nil
   | Pair Value Value
+  | Unit
   | Closure ([Name], Exp) Ref
   | Primitive Primitive
 
-type Primitive = Exp -> [Value] -> EvalMonad Value
+type Primitive = [Value] -> EvalMonad Value
 
 instance Show Value where
   show (Sym v) = v
   show (Num n) = show n
   show (Bool b) = if b then "#t" else "#f"
-  show Nil = "()"
+  show Nil = "nil"
   show (Pair car cdr) =
     let tail' (Pair car' cdr') = " " ++ show car' ++ tail' cdr'
         tail' Nil = ")"
         tail' v = " . " ++ show v ++ ")"
      in "(" ++ show car ++ tail' cdr
+  show Unit = "()"
   show (Closure {}) = "<closure>"
   show (Primitive _) = "<primitive>"
