@@ -44,6 +44,26 @@ arithOp f = binaryOp f'
     f' (Num n1) (Num n2) = return $ Num (f n1 n2)
     f' _ _ = throwError "BugInTypeInference: arithmetic operation on non-number value"
 
+boolUnaryOp :: (Bool -> Bool) -> Primitive
+boolUnaryOp f = unaryOp f'
+  where
+    f' :: Value -> EvalMonad Value
+    f' (Bool b) = return $ Bool (f b)
+    f' _ = throwError "BugInTypeInference: bool operation on non-bool value"
+
+boolBinOp :: (Bool -> Bool -> Bool) -> Primitive
+boolBinOp f = binaryOp f'
+  where
+    f' :: Value -> Value -> EvalMonad Value
+    f' (Bool b1) (Bool b2) = return $ Bool (f b1 b2)
+    f' _ _ = throwError "BugInTypeInference: bool operation on non-bool value"
+
+boolUnaryTy :: Type
+boolUnaryTy = funType [boolType] boolType
+
+boolBinTy :: Type
+boolBinTy = funType [boolType, boolType] boolType
+
 arithType :: Type
 arithType = funType [intType, intType] intType
 
@@ -89,6 +109,9 @@ primitives =
     ("<", intCompare (<), compType intType),
     (">", intCompare (>), compType intType),
     ("=", comparison primitiveEqual, compType alpha),
+    ("and", boolBinOp (&&), boolBinTy),
+    ("or", boolBinOp (||), boolBinTy),
+    ("not", boolUnaryOp not, boolUnaryTy),
     ("cons", binaryOp pair, funType [alpha, listType alpha] (listType alpha)),
     ("car", unaryOp carf, funType [listType alpha] alpha),
     ("cdr", unaryOp cdrf, funType [listType alpha] (listType alpha))
