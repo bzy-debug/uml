@@ -54,6 +54,8 @@ library
         Ast
         Interp
         Convert
+        Type
+        Subst
 
     -- Modules included in this library but not exported.
     -- other-modules:
