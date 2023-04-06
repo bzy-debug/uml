@@ -1,6 +1,3 @@
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
-{-# OPTIONS_GHC -Wno-unused-matches #-}
-
 module Convert where
 
 import Ast

@@ -1,7 +1,7 @@
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
-
 module Ast where
 
+import Control.Monad.Except
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 
@@ -17,12 +17,12 @@ binds names vals env = zip names vals ++ env
 
 type Ref = Int
 
-data RefEnv = RefEnv
+data RefState = RefState
   { mem :: [(Ref, Env Value)],
     ref :: Ref
   }
 
-type EvalMonad = ReaderT (Env Value) (StateT RefEnv (Either String))
+type EvalMonad = ExceptT String (ReaderT (Env Value) (StateT RefState Identity))
 
 data Exp
   = Literal Value

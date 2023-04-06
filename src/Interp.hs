@@ -1,24 +1,23 @@
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
-
 module Interp where
 
 import Ast
-import Control.Monad.Except (throwError)
-import Control.Monad.Reader (ask, local, runReaderT)
-import Control.Monad.State (evalStateT, get, put)
+import Control.Monad.Except
+import Control.Monad.Identity
+import Control.Monad.Reader
+import Control.Monad.State
 import Convert
 
-initialState :: RefEnv
-initialState = RefEnv {ref = 0, mem = []}
+initialState :: RefState
+initialState = RefState {ref = 0, mem = []}
 
 primitiveEnv :: Env Value
 primitiveEnv = map (\(name, prim, _) -> (name, Primitive prim)) primitives
 
 newRef :: Env Value -> EvalMonad Ref
 newRef env = do
-  RefEnv {mem = mem, ref = ref} <- get
+  RefState {mem = mem, ref = ref} <- get
   put $
-    RefEnv
+    RefState
       { mem = (ref, env) : mem,
         ref = ref + 1
       }
@@ -26,12 +25,12 @@ newRef env = do
 
 writeRef :: Ref -> Env Value -> EvalMonad ()
 writeRef r e = do
-  RefEnv {mem = mem, ref = ref} <- get
-  put $ RefEnv {mem = (r, e) : mem, ref = ref}
+  RefState {mem = mem, ref = ref} <- get
+  put $ RefState {mem = (r, e) : mem, ref = ref}
 
 readRef :: Ref -> EvalMonad (Env Value)
 readRef r = do
-  RefEnv {mem = mem} <- get
+  RefState {mem = mem} <- get
   case lookup r mem of
     Nothing -> throwError "NotFound"
     Just env -> return env
@@ -90,7 +89,10 @@ eval (Lambda formals body) = do
   ref <- newRef env
   return $ Closure (formals, body) ref
 
+runEval :: EvalMonad a -> (Either String a, RefState)
+runEval e = runIdentity (runStateT (runReaderT (runExceptT e) primitiveEnv) initialState)
+
 eval' :: Exp -> Either String String
-eval' e = case evalStateT (runReaderT (eval e) primitiveEnv) initialState of
+eval' exp = case fst (runEval (eval exp)) of
   Left err -> Left err
   Right v -> Right $ show v
