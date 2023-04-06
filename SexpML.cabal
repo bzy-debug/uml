@@ -54,9 +54,6 @@ library
         Ast
         Interp
         Convert
-        Type
-        Infer
-        TypedAst
 
     -- Modules included in this library but not exported.
     -- other-modules:

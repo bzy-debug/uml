@@ -2,7 +2,6 @@ module Convert where
 
 import Ast
 import Control.Monad.Except
-import Type
 
 embedInt :: Int -> Value
 embedInt = Num
@@ -28,11 +27,11 @@ projectList _ = Nothing
 
 unaryOp :: (Value -> EvalMonad Value) -> Primitive
 unaryOp f [a] = f a
-unaryOp f args = throwError "BugInTypeInference: unary arity error"
+unaryOp _ _ = throwError "BugInTypeInference: unary arity error"
 
 binaryOp :: (Value -> Value -> EvalMonad Value) -> Primitive
 binaryOp f [a, b] = f a b
-binaryOp f args = throwError "BugInTypeInference: binary arity error"
+binaryOp _ _ = throwError "BugInTypeInference: binary arity error"
 
 arithOp :: (Int -> Int -> Int) -> Primitive
 arithOp f = binaryOp f'
@@ -54,16 +53,7 @@ boolBinOp f = binaryOp f'
     f' :: Value -> Value -> EvalMonad Value
     f' (Bool b1) (Bool b2) = return $ Bool (f b1 b2)
     f' _ _ = throwError "BugInTypeInference: bool operation on non-bool value"
-
-boolUnaryTy :: Type
-boolUnaryTy = funType [boolType] boolType
-
-boolBinTy :: Type
-boolBinTy = funType [boolType, boolType] boolType
-
-arithType :: Type
-arithType = funType [intType, intType] intType
-
+    
 comparison :: (Value -> Value -> EvalMonad Bool) -> Primitive
 comparison f = binaryOp f'
   where
@@ -76,9 +66,6 @@ intCompare f = binaryOp f'
     f' :: Value -> Value -> EvalMonad Value
     f' (Num n1) (Num n2) = return . embedBool $ f n1 n2
     f' _ _ = throwError "BugInTypeInference: arithmetic comparision on non-number value"
-
-compType :: Type -> Type
-compType x = funType [x, x] boolType
 
 primitiveEqual :: Value -> Value -> EvalMonad Bool
 primitiveEqual v v' =
@@ -97,21 +84,21 @@ primitiveEqual v v' =
         (_, Primitive {}) -> noFun
         _ -> throwError "BugInTypeInference: compare"
 
-primitives :: [(String, Primitive, Type)]
+primitives :: [(String, Primitive)]
 primitives =
-  [ ("+", arithOp (+), arithType),
-    ("-", arithOp (-), arithType),
-    ("*", arithOp (*), arithType),
-    ("/", arithOp div, arithType),
-    ("<", intCompare (<), compType intType),
-    (">", intCompare (>), compType intType),
-    ("=", comparison primitiveEqual, compType alpha),
-    ("and", boolBinOp (&&), boolBinTy),
-    ("or", boolBinOp (||), boolBinTy),
-    ("not", boolUnaryOp not, boolUnaryTy),
-    ("cons", binaryOp pair, funType [alpha, listType alpha] (listType alpha)),
-    ("car", unaryOp carf, funType [listType alpha] alpha),
-    ("cdr", unaryOp cdrf, funType [listType alpha] (listType alpha))
+  [ ("+", arithOp (+)),
+    ("-", arithOp (-)),
+    ("*", arithOp (*)),
+    ("/", arithOp div),
+    ("<", intCompare (<)),
+    (">", intCompare (>)),
+    ("=", comparison primitiveEqual),
+    ("and", boolBinOp (&&)),
+    ("or", boolBinOp (||)),
+    ("not", boolUnaryOp not),
+    ("cons", binaryOp pair),
+    ("car", unaryOp carf),
+    ("cdr", unaryOp cdrf)
   ]
   where
     pair v v' = return $ Pair v v'

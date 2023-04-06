@@ -2,7 +2,6 @@ module Main where
 
 import Ast
 import Control.Monad
-import Infer
 import Interp
 import Parser
 import System.IO
