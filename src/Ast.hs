@@ -9,10 +9,13 @@ type Name = String
 
 type Env a = [(Name, a)]
 
-bind :: Name -> Value -> Env Value -> Env Value
+emptyEnv :: Env a
+emptyEnv = []
+
+bind :: Name -> a -> Env a -> Env a
 bind x v env = (x, v) : env
 
-binds :: [Name] -> [Value] -> Env Value -> Env Value
+binds :: [Name] -> [a] -> Env a -> Env a
 binds names vals env = zip names vals ++ env
 
 type Ref = Int

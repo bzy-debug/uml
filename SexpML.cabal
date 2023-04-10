@@ -56,8 +56,9 @@ library
         Convert
         Type
         Subst
-        Infer
         Scheme
+        Assumption
+        Infer
 
     -- Modules included in this library but not exported.
     -- other-modules:
