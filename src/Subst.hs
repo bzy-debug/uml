@@ -7,11 +7,17 @@ import Type
 
 type Subst = [(Name, Type)]
 
+showSubst :: Subst -> String
+showSubst = unwords . map (\(name, typ) -> name ++ "/" ++ show typ)
+
 emptySubst :: Subst
 emptySubst = []
 
 singleSubst :: Name -> Type -> Subst
 singleSubst x t = [(x, t)]
+
+makeSubst :: [Name] -> [Type] -> Subst
+makeSubst = zip
 
 subst :: Subst -> Type -> Type
 subst [] typ = typ
@@ -23,7 +29,7 @@ subst _ (TCon c) = TCon c
 subst ss (TApp c ts) = TApp c (map (subst ss) ts)
 
 compose :: Subst -> Subst -> Subst
-compose s1 s2 = map (second (subst s1)) s2 `union` s1
+compose s2 s1 = s2 `union` map (second (subst s2)) s1
 
 occurs :: Name -> Type -> Bool
 occurs x (TVar y) = x == y
@@ -43,7 +49,10 @@ varBind x t =
 unify :: Type -> Type -> Subst
 unify (TVar x) t = varBind x t
 unify t (TVar x) = varBind x t
-unify (TCon c) (TCon c') = if c == c' then emptySubst else error "cannot unify: diff con"
+unify (TCon c) (TCon c') =
+  if c == c'
+    then emptySubst
+    else error "cannot unify: diff con"
 unify (TApp c ts) (TApp c' ts') =
   if c == c'
     then unifys ts ts'
@@ -61,4 +70,10 @@ test :: Subst
 test =
   unify
     (TApp "j" [TVar "x", TVar "y", TVar "z"])
-    (TApp "j" [TApp "f" [TVar "y", TVar "y"], TApp "f" [TVar "z", TVar "z"], TApp "f" [TVar "a", TVar "a"]])
+    ( TApp
+        "j"
+        [ TApp "f" [TVar "y", TVar "y"],
+          TApp "f" [TVar "z", TVar "z"],
+          TApp "f" [TVar "a", TVar "a"]
+        ]
+    )
