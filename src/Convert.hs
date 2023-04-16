@@ -2,6 +2,8 @@ module Convert where
 
 import Ast
 import Control.Monad.Except
+import Scheme
+import Type
 
 embedInt :: Int -> Value
 embedInt = Num
@@ -53,7 +55,7 @@ boolBinOp f = binaryOp f'
     f' :: Value -> Value -> EvalMonad Value
     f' (Bool b1) (Bool b2) = return $ Bool (f b1 b2)
     f' _ _ = throwError "BugInTypeInference: bool operation on non-bool value"
-    
+
 comparison :: (Value -> Value -> EvalMonad Bool) -> Primitive
 comparison f = binaryOp f'
   where
@@ -84,27 +86,33 @@ primitiveEqual v v' =
         (_, Primitive {}) -> noFun
         _ -> throwError "BugInTypeInference: compare"
 
-primitives :: [(String, Primitive)]
+monoType :: Type -> Scheme
+monoType = Scheme []
+
+polyAlpha :: Type -> Scheme
+polyAlpha = Scheme ["'a"]
+
+primitives :: [(String, Primitive, Scheme)]
 primitives =
-  [ ("+", arithOp (+)),
-    ("-", arithOp (-)),
-    ("*", arithOp (*)),
-    ("/", arithOp div),
-    ("<", intCompare (<)),
-    (">", intCompare (>)),
-    ("=", comparison primitiveEqual),
-    ("and", boolBinOp (&&)),
-    ("or", boolBinOp (||)),
-    ("not", boolUnaryOp not),
-    ("cons", binaryOp pair),
-    ("car", unaryOp carf),
-    ("cdr", unaryOp cdrf)
+  [ ("+", arithOp (+), monoType $ funType [intType, intType] intType),
+    ("-", arithOp (-), monoType $ funType [intType, intType] intType),
+    ("*", arithOp (*), monoType $ funType [intType, intType] intType),
+    ("/", arithOp div, monoType $ funType [intType, intType] intType),
+    ("<", intCompare (<), monoType $ funType [intType, intType] boolType),
+    (">", intCompare (>), monoType $ funType [intType, intType] boolType),
+    ("=", comparison primitiveEqual, monoType $ funType [intType, intType] boolType),
+    ("and", boolBinOp (&&), monoType $ funType [boolType, boolType] boolType),
+    ("or", boolBinOp (||), monoType $ funType [boolType, boolType] boolType),
+    ("not", boolUnaryOp not, monoType $ funType [boolType] boolType),
+    ("cons", binaryOp pair, polyAlpha $ funType [alpha, listType alpha] $ listType alpha),
+    ("car", unaryOp carf, polyAlpha $ funType [listType alpha] alpha),
+    ("cdr", unaryOp cdrf, polyAlpha $ funType [listType alpha] $ listType alpha)
   ]
   where
     pair v v' = return $ Pair v v'
     carf :: Value -> EvalMonad Value
     carf (Pair car _) = return car
-    carf _ = throwError "RuntimeError: car"
+    carf _ = throwError "TypeError: car argument not list"
     cdrf :: Value -> EvalMonad Value
     cdrf (Pair _ cdr) = return cdr
-    cdrf _ = throwError "RuntimeError: cdr"
+    cdrf _ = throwError "TypeError: cdr argument not list"

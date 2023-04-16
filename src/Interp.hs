@@ -11,7 +11,7 @@ initialState :: RefState
 initialState = RefState {ref = 0, mem = []}
 
 primitiveEnv :: Env Value
-primitiveEnv = map (\(name, prim) -> (name, Primitive prim)) primitives
+primitiveEnv = map (\(name, prim, _) -> (name, Primitive prim)) primitives
 
 newRef :: Env Value -> EvalMonad Ref
 newRef env = do

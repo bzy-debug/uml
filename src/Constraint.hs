@@ -28,6 +28,11 @@ untriviate (Cand c c') =
     (c, c') -> Cand c c'
 untriviate atomic = atomic
 
+isSatisfied :: Constraint -> Bool
+isSatisfied (Ceq t t') = t == t'
+isSatisfied (Cand c c') = isSatisfied c && isSatisfied c'
+isSatisfied Trival = True
+
 ftvCons :: Constraint -> [Name]
 ftvCons (Ceq t t') = ftv t `union` ftv t'
 ftvCons (Cand c c') = ftvCons c `union` ftvCons c'
@@ -37,3 +42,11 @@ substCons :: Subst -> Constraint -> Constraint
 substCons s (Ceq t t') = Ceq (subst s t) (subst s t')
 substCons s (Cand c c') = Cand (substCons s c) (substCons s c')
 substCons _ Trival = Trival
+
+isSolved :: Constraint -> Bool
+isSolved Trival = True
+isSolved (Ceq t t') = t == t'
+isSolved (Cand c c') = isSolved c && isSolved c'
+
+solves :: Subst -> Constraint -> Bool
+solves s c = isSolved $ substCons s c

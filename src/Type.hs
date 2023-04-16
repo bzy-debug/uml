@@ -17,6 +17,11 @@ ftv (TVar x) = [x]
 ftv (TCon _) = []
 ftv (TApp _ types) = unions (map ftv types)
 
+occurs :: Name -> Type -> Bool
+occurs x (TVar y) = x == y
+occurs _ (TCon _) = False
+occurs x (TApp _ ts) = any (occurs x) ts
+
 intType :: Type
 intType = TCon "int"
 
@@ -31,6 +36,12 @@ funType args ret = TApp "->" [TApp "args" args, ret]
 
 listType :: Type -> Type
 listType typ = TApp "list" [typ]
+
+alpha :: Type
+alpha = TVar "'a"
+
+beta :: Type
+beta = TVar "'b"
 
 asFunType :: Type -> Maybe ([Type], Type)
 asFunType (TApp "->" [TApp "args" args, ret]) =

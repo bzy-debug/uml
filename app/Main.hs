@@ -2,6 +2,7 @@ module Main where
 
 import Ast
 import Control.Monad
+import Infer
 import Interp
 import Parser
 import System.IO
@@ -9,10 +10,9 @@ import System.IO
 interp :: String -> Either String String
 interp s = do
   let exp = replParse s
---  scheme <- infer exp
+  typ <- typeof' exp
   value <- eval' exp
---  return $ show value ++ " :: " ++ show scheme
-  return $ show value
+  return $ show value ++ " :: " ++ show typ
 
 main :: IO ()
 main = forever $ do
