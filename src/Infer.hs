@@ -51,11 +51,17 @@ solve (Ceq t1 t2) =
   case (t1, t2) of
     (TVar a, t) ->
       if a `occurs` t
-        then cannotUnify t1 t2
+        then
+          if t1 == t2
+            then return emptySubst
+            else cannotUnify t1 t2
         else varBind a t
     (t, TVar a) ->
       if a `occurs` t
-        then cannotUnify t1 t2
+        then
+          if t1 == t2
+            then return emptySubst
+            else cannotUnify t1 t2
         else varBind a t
     (TCon c1, TCon c2) ->
       if c1 == c2
@@ -147,7 +153,14 @@ typeofMany exps = do
 runTypeof :: TypeofMonad a -> (Either String a, Int)
 runTypeof e = runIdentity (runStateT (runReaderT (runExceptT e) primitiveAssum) 0)
 
-typeof' :: Exp -> Either String String
-typeof' exp = case fst (runTypeof (typeof exp)) of
+infer :: Exp -> TypeofMonad Scheme
+infer exp = do
+  (typ, con) <- typeof exp
+  s <- solve con
+  let typ' = subst s typ
+  return $ generalize typ' []
+
+infer' :: Exp -> Either String String
+infer' exp = case fst (runTypeof (infer exp)) of
   Left err -> Left err
   Right v -> Right $ show v

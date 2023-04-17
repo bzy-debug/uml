@@ -100,7 +100,7 @@ primitives =
     ("/", arithOp div, monoType $ funType [intType, intType] intType),
     ("<", intCompare (<), monoType $ funType [intType, intType] boolType),
     (">", intCompare (>), monoType $ funType [intType, intType] boolType),
-    ("=", comparison primitiveEqual, monoType $ funType [intType, intType] boolType),
+    ("=", comparison primitiveEqual, polyAlpha $ funType [alpha, alpha] boolType),
     ("and", boolBinOp (&&), monoType $ funType [boolType, boolType] boolType),
     ("or", boolBinOp (||), monoType $ funType [boolType, boolType] boolType),
     ("not", boolUnaryOp not, monoType $ funType [boolType] boolType),

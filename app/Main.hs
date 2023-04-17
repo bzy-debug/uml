@@ -10,9 +10,9 @@ import System.IO
 interp :: String -> Either String String
 interp s = do
   let exp = replParse s
-  typ <- typeof' exp
+  sch <- infer' exp
   value <- eval' exp
-  return $ show value ++ " :: " ++ show typ
+  return $ show value ++ " :: " ++ show sch
 
 main :: IO ()
 main = forever $ do
