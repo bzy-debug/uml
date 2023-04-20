@@ -88,6 +88,9 @@ names = surround $ many name
 bindings :: Parser [(Name, Exp)]
 bindings = surround $ many (surround $ liftM2 (,) name expression)
 
+lambdaExp :: Parser Exp
+lambdaExp = surroundBy "lambda" (liftM2 Lambda names expression)
+
 expression :: Parser Exp
 expression =
   try literal

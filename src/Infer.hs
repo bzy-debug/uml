@@ -48,30 +48,26 @@ solve (Cand c1 c2) = do
   s2 <- solve $ substCons s1 c2
   return $ compose s2 s1
 solve (Ceq t1 t2) =
-  case (t1, t2) of
-    (TVar a, t) ->
-      if a `occurs` t
-        then
-          if t1 == t2
-            then return emptySubst
-            else cannotUnify t1 t2
-        else varBind a t
-    (t, TVar a) ->
-      if a `occurs` t
-        then
-          if t1 == t2
-            then return emptySubst
-            else cannotUnify t1 t2
-        else varBind a t
-    (TCon c1, TCon c2) ->
-      if c1 == c2
-        then return emptySubst
-        else cannotUnify t1 t2
-    (TApp c1 ts1, TApp c2 ts2) ->
-      if c1 == c2
-        then solve $ conjoin (zipWith Ceq ts1 ts2)
-        else cannotUnify t1 t2
-    _ -> cannotUnify t1 t2
+  if t1 == t2
+    then return emptySubst
+    else case (t1, t2) of
+      (TVar a, t) ->
+        if a `occurs` t
+          then cannotUnify t1 t2
+          else varBind a t
+      (t, TVar a) ->
+        if a `occurs` t
+          then cannotUnify t1 t2
+          else varBind a t
+      (TCon c1, TCon c2) ->
+        if c1 == c2
+          then return emptySubst
+          else cannotUnify t1 t2
+      (TApp c1 ts1, TApp c2 ts2) ->
+        if c1 == c2 && length ts1 == length ts2
+          then solve $ conjoin (zipWith Ceq ts1 ts2)
+          else cannotUnify t1 t2
+      _ -> cannotUnify t1 t2
 
 literalType :: Value -> TypeofMonad Type
 literalType (Sym _) = return symType
@@ -102,7 +98,10 @@ typeof (If e1 e2 e3) = do
   return (t2, conjoin [c1, c2, c3, t1 `Ceq` boolType, t2 `Ceq` t3])
 typeof (Begin es) =
   let iter [] last = last
-      iter (e : es) _ = iter es (typeof e)
+      iter (e : es) _ = iter es $ do
+        (t, c) <- typeof e
+        _ <- solve c
+        return (t, c)
    in iter es (return (boolType, Trival))
 typeof (Lambda names exp) = do
   alphas <- freshTypes (length names)
