@@ -50,7 +50,6 @@ extra-source-files: CHANGELOG.md
 library
     -- Modules exported by the library.
     exposed-modules:
-        Parser
         Ast
         Interp
         Convert
