@@ -2,8 +2,8 @@ module Sexp where
 
 import Ast
 import Control.Monad.Combinators
-import Control.Monad.Trans.Except
 import Control.Monad.Identity
+import Control.Monad.Trans.Except
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -28,7 +28,10 @@ sexpToValue (Atom s) = Num <$> (readMaybe s :: Maybe Int)
 sexpToValue (Slist (Atom "quote" : es)) =
   let toValue (Atom s) = maybe (Sym s) Num (readMaybe s :: Maybe Int)
       toValue (Slist es) = foldr (Pair . toValue) Nil es
-   in Just $ foldr (Pair . toValue) Nil es
+   in Just $ case es of
+    [] -> Nil
+    [se] -> toValue se
+    _ -> foldr (Pair . toValue) Nil es
 sexpToValue (Slist _) = Nothing
 
 sexpToExp :: Sexp -> ToExpMonad Exp
@@ -67,7 +70,7 @@ sexpToExp s =
         Slist (Atom "let" : _) -> throwE $ "Ill formed : let" ++ show s
         Slist (Atom "let*" : _) -> throwE $ "Ill formed : let*" ++ show s
         Slist (Atom "letrec" : _) -> throwE $ "Ill formed : letrec" ++ show s
-        Slist (seRator:seRands) -> do
+        Slist (seRator : seRands) -> do
           rator <- sexpToExp seRator
           rands <- mapM sexpToExp seRands
           return $ Apply rator rands
@@ -76,7 +79,7 @@ sexpToExp s =
 asName :: Sexp -> ToExpMonad Name
 asName (Atom s) =
   case readMaybe s :: Maybe Int of
-    Just i -> throwE $ "Expect Name but got Number " ++ show i 
+    Just i -> throwE $ "Expect Name but got Number " ++ show i
     Nothing -> return s
 asName se = throwE $ "Expect Name but got " ++ show se
 
@@ -155,8 +158,17 @@ parseAtom = Atom <$> name
 parseList :: Parser Sexp
 parseList = Slist <$> surround (many parseSexp)
 
+parseQuote :: Parser Sexp
+parseQuote = do
+  _ <- char '\''
+  se <- parseSexp
+  return $
+    case se of
+      Atom _ -> Slist [Atom "quote", se]
+      Slist ss -> Slist (Atom "quote" : ss)
+
 parseSexp :: Parser Sexp
-parseSexp = spaceConsumer *> (parseAtom <|> parseList)
+parseSexp = spaceConsumer *> (parseAtom <|> parseList <|> parseQuote)
 
 parseExp :: String -> Either String Exp
 parseExp s =
