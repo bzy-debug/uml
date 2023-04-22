@@ -43,9 +43,7 @@ lookupEnv x = do
     Just v -> return v
 
 bindValue :: Name -> Value -> DefMonad ()
-bindValue x v = do
-  env <- get
-  put $ bind x v env
+bindValue x v = modify $ bind x v
 
 evalDef :: Def -> DefMonad ()
 evalDef def =
@@ -59,11 +57,12 @@ evalDef def =
     (DExp e) -> do
       v <- evalExp e
       bindValue "it" v
-    (Define f xs body) -> evalDef (Val f (Lambda xs body))
+    (Define f xs body) -> evalDef (Valrec f (Lambda xs body))
   where
     evalExp :: Exp -> DefMonad Value
     evalExp e = do
-      let (res, _) = runEval $ eval e
+      env <- get
+      let (res, _) = runEval (eval e) env
       case res of
         Left err -> throwError err
         Right v -> return v
@@ -115,10 +114,10 @@ eval (Lambda formals body) = do
   ref <- newRef env
   return $ Closure (formals, body) ref
 
-runEval :: EvalMonad a -> (Either String a, RefState)
-runEval e = runIdentity (runStateT (runReaderT (runExceptT e) primitiveEnv) initialState)
+runEval :: EvalMonad a -> Env Value -> (Either String a, RefState)
+runEval e env = runIdentity (runStateT (runReaderT (runExceptT e) env) initialState)
 
 eval' :: Exp -> Either String String
-eval' exp = case fst (runEval (eval exp)) of
+eval' exp = case fst (runEval (eval exp) primitiveEnv) of
   Left err -> Left err
   Right v -> Right $ show v
