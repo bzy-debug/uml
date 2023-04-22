@@ -32,7 +32,7 @@ readRef :: Ref -> EvalMonad (Env Value)
 readRef r = do
   RefState {mem = mem} <- get
   case lookup r mem of
-    Nothing -> throwError "NotFound"
+    Nothing -> throwError $ "NotFound: " ++ show r
     Just env -> return env
 
 lookupEnv :: Name -> EvalMonad Value
@@ -41,6 +41,32 @@ lookupEnv x = do
   case lookup x env of
     Nothing -> throwError $ "NotFound: " ++ x
     Just v -> return v
+
+bindValue :: Name -> Value -> DefMonad ()
+bindValue x v = do
+  env <- get
+  put $ bind x v env
+
+evalDef :: Def -> DefMonad ()
+evalDef def =
+  case def of
+    (Val x e) -> do
+      v <- evalExp e
+      bindValue x v
+    (Valrec x e) -> do
+      v <- evalExp e
+      bindValue x v
+    (DExp e) -> do
+      v <- evalExp e
+      bindValue "it" v
+    (Define f xs body) -> evalDef (Val f (Lambda xs body))
+  where
+    evalExp :: Exp -> DefMonad Value
+    evalExp e = do
+      let (res, _) = runEval $ eval e
+      case res of
+        Left err -> throwError err
+        Right v -> return v
 
 eval :: Exp -> EvalMonad Value
 eval (Literal v) = return v

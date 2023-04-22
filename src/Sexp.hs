@@ -66,10 +66,10 @@ sexpToExp s =
           body <- sexpToExp seBody
           return $ Lambda names body
         Slist (Atom "lambda" : _) -> throwE $ "Ill formed lambda: " ++ show s
-        Slist (Atom "if" : _) -> throwE $ "Ill formed : if" ++ show s
-        Slist (Atom "let" : _) -> throwE $ "Ill formed : let" ++ show s
-        Slist (Atom "let*" : _) -> throwE $ "Ill formed : let*" ++ show s
-        Slist (Atom "letrec" : _) -> throwE $ "Ill formed : letrec" ++ show s
+        Slist (Atom "if" : _) -> throwE $ "Ill formed if:" ++ show s
+        Slist (Atom "let" : _) -> throwE $ "Ill formed let:" ++ show s
+        Slist (Atom "let*" : _) -> throwE $ "Ill formed let*:" ++ show s
+        Slist (Atom "letrec" : _) -> throwE $ "Ill formed letrec:" ++ show s
         Slist (seRator : seRands) -> do
           rator <- sexpToExp seRator
           rands <- mapM sexpToExp seRands

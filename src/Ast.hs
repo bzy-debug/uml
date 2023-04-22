@@ -25,7 +25,17 @@ data RefState = RefState
     ref :: Ref
   }
 
+type DefMonad = ExceptT String (StateT (Env Value) Identity)
+
 type EvalMonad = ExceptT String (ReaderT (Env Value) (StateT RefState Identity))
+
+type Prog = ([Def], [Exp])
+
+data Def
+  = Val Name Exp
+  | Valrec Name Exp
+  | DExp Exp
+  | Define Name [Name] Exp
 
 data Exp
   = Literal Value
@@ -36,8 +46,15 @@ data Exp
   | Letx LetFlavor [(Name, Exp)] Exp
   | Lambda [Name] Exp
 
-
 data LetFlavor = Let | LetRec | LetStar
+
+newtype Choice = Choice [(Pattern, Exp)]
+
+data Pattern
+  = PVar Name
+  | PCon Name
+  | PApp Name [Pattern]
+  | Underscore
 
 instance Show Exp where
   show e =
