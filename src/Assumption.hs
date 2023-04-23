@@ -1,7 +1,7 @@
 module Assumption where
 
 import Ast
-import Convert
+import Primitives
 import Data.Bifunctor
 import Data.List
 import Scheme

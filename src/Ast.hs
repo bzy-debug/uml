@@ -2,8 +2,8 @@ module Ast where
 
 import Control.Monad.Except
 import Control.Monad.Identity
-import Control.Monad.Reader
 import Control.Monad.State
+import Lens.Micro
 
 type Name = String
 
@@ -20,14 +20,29 @@ binds names vals env = zip names vals ++ env
 
 type Ref = Int
 
-data RefState = RefState
-  { mem :: [(Ref, Env Value)],
-    ref :: Ref
+data EnvRef = EnvRef
+  { _mem :: [(Ref, Env Value)],
+    _ref :: Ref
   }
 
-type DefMonad = ExceptT String (StateT (Env Value) Identity)
+data EvalState = EvalState
+  { _valueEnv :: Env Value,
+    _envRef :: EnvRef
+  }
 
-type EvalMonad = ExceptT String (ReaderT (Env Value) (StateT RefState Identity))
+valueEnv :: Lens' EvalState (Env Value)
+valueEnv f (EvalState e r) = (`EvalState` r) <$> f e
+
+envRef :: Lens' EvalState EnvRef
+envRef f (EvalState e r) = EvalState e <$> f r
+
+mem :: Lens' EnvRef [(Ref, Env Value)]
+mem f (EnvRef m r) = (`EnvRef` r) <$> f m
+
+ref :: Lens' EnvRef Ref
+ref f (EnvRef m r) = EnvRef m <$> f r
+
+type EvalMonad = ExceptT String (StateT EvalState Identity)
 
 type Prog = ([Def], [Exp])
 
@@ -79,6 +94,8 @@ instance Show LetFlavor where
   show LetRec = "letrec"
   show LetStar = "let*"
 
+type Primitive = [Value] -> EvalMonad Value
+
 data Value
   = Sym Name
   | Num Int
@@ -87,8 +104,6 @@ data Value
   | Pair Value Value
   | Closure ([Name], Exp) Ref
   | Primitive Primitive
-
-type Primitive = [Value] -> EvalMonad Value
 
 instance Show Value where
   show (Sym v) = v

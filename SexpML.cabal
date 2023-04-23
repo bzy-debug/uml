@@ -50,16 +50,17 @@ extra-source-files: CHANGELOG.md
 library
     -- Modules exported by the library.
     exposed-modules:
+        Sexp
         Ast
+        Primitives
         Interp
-        Convert
         Type
         Subst
         Constraint
         Scheme
         Assumption
         Infer
-        Sexp
+
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -70,11 +71,9 @@ library
     build-depends:
         , base ^>=4.16.4.0
         , megaparsec
-        , parser-combinators
-        , transformers
-        , containers
         , mtl
-
+        , microlens
+      
     -- Directories containing source files.
     hs-source-dirs:   src
 

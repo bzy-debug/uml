@@ -1,9 +1,8 @@
 module Sexp where
 
 import Ast
-import Control.Monad.Combinators
 import Control.Monad.Identity
-import Control.Monad.Trans.Except
+import Control.Monad.Except
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -65,11 +64,11 @@ sexpToExp s =
           names <- asNames seNames
           body <- sexpToExp seBody
           return $ Lambda names body
-        Slist (Atom "lambda" : _) -> throwE $ "Ill formed lambda: " ++ show s
-        Slist (Atom "if" : _) -> throwE $ "Ill formed if:" ++ show s
-        Slist (Atom "let" : _) -> throwE $ "Ill formed let:" ++ show s
-        Slist (Atom "let*" : _) -> throwE $ "Ill formed let*:" ++ show s
-        Slist (Atom "letrec" : _) -> throwE $ "Ill formed letrec:" ++ show s
+        Slist (Atom "lambda" : _) -> throwError $ "Ill formed lambda: " ++ show s
+        Slist (Atom "if" : _) -> throwError $ "Ill formed if:" ++ show s
+        Slist (Atom "let" : _) -> throwError $ "Ill formed let:" ++ show s
+        Slist (Atom "let*" : _) -> throwError $ "Ill formed let*:" ++ show s
+        Slist (Atom "letrec" : _) -> throwError $ "Ill formed letrec:" ++ show s
         Slist (seRator : seRands) -> do
           rator <- sexpToExp seRator
           rands <- mapM sexpToExp seRands
@@ -79,42 +78,42 @@ sexpToExp s =
 asName :: Sexp -> ToExpMonad Name
 asName (Atom s) =
   case readMaybe s :: Maybe Int of
-    Just i -> throwE $ "Expect Name but got Number " ++ show i
+    Just i -> throwError $ "Expect Name but got Number " ++ show i
     Nothing -> return s
-asName se = throwE $ "Expect Name but got " ++ show se
+asName se = throwError $ "Expect Name but got " ++ show se
 
 asNames :: Sexp -> ToExpMonad [Name]
 asNames (Slist ses) = mapM asName ses
-asNames se = throwE $ "Expect Names but got " ++ show se
+asNames se = throwError $ "Expect Names but got " ++ show se
 
 asLambda :: Sexp -> ToExpMonad Exp
 asLambda (Slist [Atom "lambda", seNames, seBody]) = do
   names <- asNames seNames
   body <- sexpToExp seBody
   return $ Lambda names body
-asLambda se = throwE $ "Expect Lambda expression but got " ++ show se
+asLambda se = throwError $ "Expect Lambda expression but got " ++ show se
 
 asLambdaBinding :: Sexp -> ToExpMonad (Name, Exp)
 asLambdaBinding (Slist [seName, seLambda]) = do
   name <- asName seName
   lambdaExp <- asLambda seLambda
   return (name, lambdaExp)
-asLambdaBinding se = throwE $ "Expect LambdaBinding but got " ++ show se
+asLambdaBinding se = throwError $ "Expect LambdaBinding but got " ++ show se
 
 asLambdaBindings :: Sexp -> ToExpMonad [(Name, Exp)]
 asLambdaBindings (Slist ses) = mapM asLambdaBinding ses
-asLambdaBindings se = throwE $ "Expect LambdaBindings but got " ++ show se
+asLambdaBindings se = throwError $ "Expect LambdaBindings but got " ++ show se
 
 asBinding :: Sexp -> ToExpMonad (Name, Exp)
 asBinding (Slist [seName, seExp]) = do
   name <- asName seName
   exp <- sexpToExp seExp
   return (name, exp)
-asBinding se = throwE $ "Expect Binding but got " ++ show se
+asBinding se = throwError $ "Expect Binding but got " ++ show se
 
 asBindings :: Sexp -> ToExpMonad [(Name, Exp)]
 asBindings (Slist es) = mapM asBinding es
-asBindings se = throwE $ "Expect Bindings but got " ++ show se
+asBindings se = throwError $ "Expect Bindings but got " ++ show se
 
 type Parser = Parsec Void String
 

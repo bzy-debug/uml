@@ -3,121 +3,106 @@ module Interp where
 import Ast
 import Control.Monad.Except
 import Control.Monad.Identity
-import Control.Monad.Reader
 import Control.Monad.State
-import Convert
+import Lens.Micro
+import Lens.Micro.Extras
+import Primitives
 
-initialState :: RefState
-initialState = RefState {ref = 0, mem = []}
-
-primitiveEnv :: Env Value
-primitiveEnv = map (\(name, prim, _) -> (name, Primitive prim)) primitives
+initEvalState :: EvalState
+initEvalState =
+  EvalState
+    (map (\(name, prim, _) -> (name, Primitive prim)) primitives)
+    (EnvRef [] 0)
 
 newRef :: Env Value -> EvalMonad Ref
 newRef env = do
-  RefState {mem = mem, ref = ref} <- get
-  put $
-    RefState
-      { mem = (ref, env) : mem,
-        ref = ref + 1
-      }
-  return ref
+  evalState <- get
+  let ref' = view (envRef . ref) evalState
+  put $ evalState & (envRef . mem) %~ (\m -> (ref', env) : m) & (envRef . ref) %~ (+1)
+  return ref'
 
 writeRef :: Ref -> Env Value -> EvalMonad ()
-writeRef r e = do
-  RefState {mem = mem, ref = ref} <- get
-  put $ RefState {mem = (r, e) : mem, ref = ref}
+writeRef r e = modify $ (envRef . mem) %~ (\m -> (r, e) : m)
 
 readRef :: Ref -> EvalMonad (Env Value)
 readRef r = do
-  RefState {mem = mem} <- get
-  case lookup r mem of
+  mem' <- gets $ view (envRef . mem)
+  case lookup r mem' of
     Nothing -> throwError $ "NotFound: " ++ show r
     Just env -> return env
 
 lookupEnv :: Name -> EvalMonad Value
 lookupEnv x = do
-  env <- ask
+  env <- gets $ view valueEnv
   case lookup x env of
     Nothing -> throwError $ "NotFound: " ++ x
     Just v -> return v
 
-bindValue :: Name -> Value -> DefMonad ()
-bindValue x v = modify $ bind x v
+bindValue :: Name -> Value -> EvalMonad ()
+bindValue x v = modify $ valueEnv %~ bind x v
 
-evalDef :: Def -> DefMonad ()
+evalDef :: Def -> EvalMonad ()
 evalDef def =
   case def of
-    (Val x e) -> do
-      v <- evalExp e
-      bindValue x v
-    (Valrec x e) -> do
-      v <- evalExp e
-      bindValue x v
-    (DExp e) -> do
-      v <- evalExp e
-      bindValue "it" v
+    (Val x e) -> evalExp e >>= bindValue x
+    (Valrec x e) -> evalExp e >>= bindValue x 
+    (DExp e) -> evalExp e >>= bindValue "it"
     (Define f xs body) -> evalDef (Valrec f (Lambda xs body))
-  where
-    evalExp :: Exp -> DefMonad Value
-    evalExp e = do
-      env <- get
-      let (res, _) = runEval (eval e) env
-      case res of
-        Left err -> throwError err
-        Right v -> return v
 
-eval :: Exp -> EvalMonad Value
-eval (Literal v) = return v
-eval (Var x) = lookupEnv x
-eval (If cond ifso ifelse) = do
-  condVal <- eval cond
-  eval $ if projectBool condVal then ifso else ifelse
-eval (Begin exps) =
+evalExp :: Exp -> EvalMonad Value
+evalExp (Literal v) = return v
+evalExp (Var x) = lookupEnv x
+evalExp (If cond ifso ifelse) = do
+  condVal <- evalExp cond
+  evalExp $ if projectBool condVal then ifso else ifelse
+evalExp (Begin exps) =
   let iter [] lastVal = lastVal
-      iter (e : es) _ = iter es (eval e)
+      iter (e : es) _ = iter es (evalExp e)
    in iter exps (return $ Bool False)
-eval (Apply fun args) = do
-  funVal <- eval fun
+evalExp (Apply fun args) = do
+  funVal <- evalExp fun
   case funVal of
     Primitive prim -> do
-      actuals <- mapM eval args
+      actuals <- mapM evalExp args
       prim actuals
     Closure (formals, body) ref -> do
-      env <- readRef ref
-      actuals <- mapM eval args
-      local (\_ -> binds formals actuals env) (eval body)
+      savedEnv <- readRef ref
+      actuals <- mapM evalExp args
+      modify $ valueEnv .~ binds formals actuals savedEnv
+      evalExp body
     _ -> throwError "BugInTypInference: apply non-function"
-eval (Letx Let bs body) = do
+evalExp (Letx Let bs body) = do
   let (names, exps) = unzip bs
-  values <- mapM eval exps
-  local (binds names values) (eval body)
-eval (Letx LetStar bs body) =
+  values <- mapM evalExp exps
+  modify $ valueEnv %~ binds names values
+  evalExp body
+evalExp (Letx LetStar bs body) =
   case bs of
-    [] -> eval body
-    b : bs -> eval (Letx Let [b] (Letx LetStar bs body))
-eval (Letx LetRec bs body) =
+    [] -> evalExp body
+    b : bs -> evalExp (Letx Let [b] (Letx LetStar bs body))
+evalExp (Letx LetRec bs body) =
   let asLambda :: Exp -> EvalMonad ([Name], Exp)
       asLambda (Lambda formals body) = return (formals, body)
-      asLambda _ = throwError "ParseError: rhs of letrec should be lambda"
+      asLambda _ = throwError "SyntaxError: rhs of letrec should be lambda"
    in do
         let (names, exps) = unzip bs
         lambdas <- mapM asLambda exps
-        env <- ask
+        env <- gets $ view valueEnv
         envRef <- newRef env
         let closures = map (`Closure` envRef) lambdas
         let newEnv = binds names closures env
         writeRef envRef newEnv
-        local (const newEnv) (eval body)
-eval (Lambda formals body) = do
-  env <- ask
+        modify $ valueEnv .~ newEnv
+        evalExp body
+evalExp (Lambda formals body) = do
+  env <- gets $ view valueEnv
   ref <- newRef env
   return $ Closure (formals, body) ref
 
-runEval :: EvalMonad a -> Env Value -> (Either String a, RefState)
-runEval e env = runIdentity (runStateT (runReaderT (runExceptT e) env) initialState)
+runEval :: EvalMonad a -> EvalState -> (Either String a, EvalState)
+runEval e state = runIdentity (runStateT (runExceptT e) state)
 
-eval' :: Exp -> Either String String
-eval' exp = case fst (runEval (eval exp) primitiveEnv) of
+evalExp' :: Exp -> Either String String
+evalExp' exp = case fst (runEval (evalExp exp) initEvalState) of
   Left err -> Left err
   Right v -> Right $ show v

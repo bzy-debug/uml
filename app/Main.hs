@@ -11,8 +11,8 @@ interp :: String -> Either String String
 interp s = do
   exp <- parseExp s
   sch <- infer' exp
-  value <- eval' exp
-  return $ show value ++ " :: " ++ show sch
+  value <- evalExp' exp
+  return $ value ++ " :: " ++ sch
 
 main :: IO ()
 main = forever $ do
@@ -29,3 +29,6 @@ file f = do
   case interp src of
     Left s -> putStrLn s
     Right s -> putStrLn s
+
+-- main :: IO ()
+-- main = putStrLn "Hello World"

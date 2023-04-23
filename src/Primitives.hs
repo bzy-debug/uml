@@ -1,4 +1,4 @@
-module Convert where
+module Primitives where
 
 import Ast
 import Control.Monad.Except
