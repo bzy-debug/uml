@@ -3,8 +3,8 @@
 module Infer where
 
 import Assumption
-import Ast
 import Basic
+import Core
 import Constraint
 import Control.Monad.Except
 import Control.Monad.State
@@ -141,18 +141,13 @@ typeof (VCon c) = do
     Nothing -> throwError $ "NotFound: " ++ c
     Just scheme@(Scheme names _) ->
       (,Trival) . instantiate scheme <$> freshTypes (length names)
-typeof (If e1 e2 e3) = do
-  (t1, c1) <- typeof e1
-  (t2, c2) <- typeof e2
-  (t3, c3) <- typeof e3
-  return (t2, conjoin [c1, c2, c3, t1 `Ceq` boolType, t2 `Ceq` t3])
-typeof (Begin es) =
-  let iter [] last = last
-      iter (e : es) _ = iter es $ do
-        (t, c) <- typeof e
-        _ <- solve c
-        return (t, c)
-   in iter es (return (boolType, Trival))
+typeof (Begin es) = undefined
+  -- let iter [] last = last
+  --     iter (e : es) _ = iter es $ do
+  --       (t, c) <- typeof e
+  --       _ <- solve c
+  --       return (t, c)
+  --  in iter es (return (boolType, Trival))
 typeof (Lambda names exp) = do
   alphas <- freshTypes (length names)
   let schemes = map (Scheme []) alphas
@@ -165,7 +160,7 @@ typeof (Apply fun args) = do
     (funTyp : argTyps) -> do
       alpha <- freshType
       return (alpha, c `Cand` (funTyp `Ceq` funType argTyps alpha))
-typeof (Letx Let binds body) = do
+typeof (Let binds body) = do
   let (names, exps) = unzip binds
   (typs, c) <- typeofMany exps
   s <- solve c
@@ -174,13 +169,7 @@ typeof (Letx Let binds body) = do
   let schemes = [generalize (subst s typ) (ftvAssum assum ++ ftvCons c') | typ <- typs]
   (bodyTyp, bodyCons) <- localAssum (bindSchemes names schemes) (typeof body)
   return (bodyTyp, c' `Cand` bodyCons)
-typeof (Letx LetStar binds body) =
-  typeof $ desugur binds
-  where
-    desugur :: [(Name, Exp)] -> Exp
-    desugur [] = body
-    desugur (b : bs) = Letx Let [b] $ desugur bs
-typeof (Letx LetRec binds body) = do
+typeof (Letrec binds body) = do
   let (names, exps) = unzip binds
   alphas <- freshTypes (length names)
   let alphaSchemes = map (Scheme []) alphas
@@ -253,8 +242,3 @@ infer exp = do
   s <- solve con
   let typ' = subst s typ
   return $ generalize typ' []
-
-infer' :: Exp -> Either String String
-infer' exp = case fst (runTypeof (infer exp) undefined) of
-  Left err -> Left err
-  Right v -> Right $ show v

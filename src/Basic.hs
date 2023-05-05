@@ -1,6 +1,16 @@
 module Basic where
 
+data Sexp
+  = Atom String
+  | Slist [Sexp]
+
+instance Show Sexp where
+  show (Atom s) = s
+  show (Slist ss) = "(" ++ unwords (map show ss) ++ ")"
+
 type Name = String
+
+type Ref = Int
 
 type VCon = Name
 

@@ -1,12 +1,11 @@
 module Eval where
 
-import Ast
+import Core
 import Basic
 import Control.Monad.Except
 import Control.Monad.State
 import Lens.Micro
 import Lens.Micro.Extras
-import Primitives
 
 data EnvRef = EnvRef
   { _mem :: [(Ref, Env Value)],
@@ -31,12 +30,6 @@ ref :: Lens' EnvRef Ref
 ref f (EnvRef m r) = EnvRef m <$> f r
 
 type EvalMonad = ExceptT String (State EvalState)
-
-initEvalState :: EvalState
-initEvalState =
-  EvalState
-    (map (\(name, prim, _) -> (name, Primitive prim)) primitives)
-    (EnvRef [] 0)
 
 newRef :: Env Value -> EvalMonad Ref
 newRef env = do
@@ -85,7 +78,7 @@ evalDef :: Def -> EvalMonad String
 evalDef (Val x e) = do
   v <- evalExp e
   bindValue x v
-  return $ show x ++ " = " ++ show v
+  return $ x ++ " = " ++ show v
 evalDef (Valrec x e) = do
   env <- getEnv
   envRef <- newRef env
@@ -94,20 +87,12 @@ evalDef (Valrec x e) = do
   writeRef envRef newEnv
   replaceEnv newEnv
   return $ show x ++ " = <closure>"
-evalDef (DExp e) = do
-  v <- evalExp e
-  bindValue "it" v
-  return $ "it = " ++ show v
-evalDef (Define f xs body) = evalDef (Valrec f (Lambda xs body))
 evalDef (Data name _ _) = return name
 
 evalExp :: Exp -> EvalMonad Value
 evalExp (Literal v) = return v
 evalExp (Var x) = lookupEnv x
 evalExp (VCon x) = lookupEnv x
-evalExp (If cond ifso ifelse) = do
-  condVal <- evalExp cond
-  evalExp $ if projectBool condVal then ifso else ifelse
 evalExp (Begin exps) =
   let iter [] lastVal = lastVal
       iter (e : es) _ = iter es (evalExp e)
@@ -124,16 +109,12 @@ evalExp (Apply fun args) = do
       replaceEnv (binds formals actuals savedEnv)
       evalExp body
     _ -> error "BugInTypInference: apply non-function"
-evalExp (Letx Let bs body) = do
+evalExp (Let bs body) = do
   let (names, exps) = unzip bs
   values <- mapM evalExp exps
   bindValues names values
   evalExp body
-evalExp (Letx LetStar bs body) =
-  case bs of
-    [] -> evalExp body
-    b : bs -> evalExp (Letx Let [b] (Letx LetStar bs body))
-evalExp (Letx LetRec bs body) = do
+evalExp (Letrec bs body) = do
   let (names, exps) = unzip bs
   let lambdas = map asLambda exps
   env <- getEnv
@@ -171,8 +152,3 @@ match _ _ = Nothing
 
 runEval :: EvalMonad a -> EvalState -> (Either String a, EvalState)
 runEval e = runState (runExceptT e)
-
-evalExp' :: Exp -> Either String String
-evalExp' exp = case fst (runEval (evalExp exp) initEvalState) of
-  Left err -> Left err
-  Right v -> Right $ show v

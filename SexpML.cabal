@@ -53,6 +53,7 @@ library
     Assumption
     Ast
     Basic
+    Core
     Constraint
     Eval
     Infer
