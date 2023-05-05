@@ -1,12 +1,25 @@
 module Type where
 
-import Ast
+import Basic
 import Data.List
+
+type TypeId = Int
+
+data TypeCons = TypeCons
+  { printName :: String,
+    id :: TypeId
+  }
+
+instance Eq TypeCons where
+  (==) (TypeCons _ i1) (TypeCons _ i2) = i1 == i2
+
+instance Show TypeCons where
+  show (TypeCons name _) = name
 
 data Type
   = TVar Name
-  | TCon Name
-  | TApp Name [Type]
+  | TCon TypeCons
+  | TApp TypeCons [Type]
   deriving (Eq)
 
 unions :: Eq a => [[a]] -> [a]
@@ -22,30 +35,52 @@ occurs x (TVar y) = x == y
 occurs _ (TCon _) = False
 occurs x (TApp _ ts) = any (occurs x) ts
 
-intType :: Type
-intType = TCon "int"
+intCons :: TypeCons
+intCons = TypeCons "int" 0
 
-boolType :: Type
-boolType = TCon "bool"
+intType :: Type
+intType = TCon intCons
+
+symCons :: TypeCons
+symCons = TypeCons "sym" 1
 
 symType :: Type
-symType = TCon "sym"
+symType = TCon symCons
+
+boolCons :: TypeCons
+boolCons = TypeCons "bool" 2
+
+boolType :: Type
+boolType = TCon boolCons
+
+arrowCons :: TypeCons
+arrowCons = TypeCons "->" 3
+
+arrowType :: Type
+arrowType = TCon arrowCons
+
+argCons :: TypeCons
+argCons = TypeCons "args" 4
+
+argType :: Type
+argType = TCon argCons
 
 funType :: [Type] -> Type -> Type
-funType args ret = TApp "->" [TApp "args" args, ret]
+funType args ret = TApp arrowCons [TApp argCons args, ret]
+
+listCons :: TypeCons
+listCons = TypeCons "list" 5
 
 listType :: Type -> Type
-listType typ = TApp "list" [typ]
+listType t = TApp listCons [t]
 
 alpha :: Type
 alpha = TVar "'a"
 
-beta :: Type
-beta = TVar "'b"
-
 asFunType :: Type -> Maybe ([Type], Type)
-asFunType (TApp "->" [TApp "args" args, ret]) =
-  Just (args, ret)
+asFunType (TApp arrow [TApp arg args, ret])
+  | arrow == arrowCons && arg == argCons =
+      Just (args, ret)
 asFunType _ = Nothing
 
 instance Show Type where
@@ -56,5 +91,5 @@ instance Show Type where
       Nothing ->
         case typ of
           TVar x -> x
-          TCon c -> c
-          TApp con types -> "(" ++ con ++ " " ++ unwords (map show types) ++ ")"
+          TCon c -> show c
+          TApp con types -> "(" ++ show con ++ " " ++ unwords (map show types) ++ ")"

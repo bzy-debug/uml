@@ -1,11 +1,11 @@
 module Subst where
 
-import Ast
+import Basic
 import Data.Bifunctor
 import Data.List
 import Type
 
-type Subst = [(Name, Type)]
+type Subst = Env Type
 
 showSubst :: Subst -> String
 showSubst = unwords . map (\(name, typ) -> name ++ "/" ++ show typ)

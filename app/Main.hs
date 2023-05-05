@@ -4,31 +4,8 @@ import Ast
 import Control.Monad
 import Sexp
 import Infer
-import Interp
+import Eval
 import System.IO
 
-interp :: String -> Either String String
-interp s = do
-  exp <- parseExp s
-  sch <- infer' exp
-  value <- evalExp' exp
-  return $ value ++ " :: " ++ sch
-
 main :: IO ()
-main = forever $ do
-  putStr "> "
-  hFlush stdout
-  line <- getLine
-  case interp line of
-    Left s -> putStrLn s
-    Right s -> putStrLn s
-
-file :: String -> IO ()
-file f = do
-  src <- readFile f
-  case interp src of
-    Left s -> putStrLn s
-    Right s -> putStrLn s
-
--- main :: IO ()
--- main = putStrLn "Hello World"
+main = putStrLn "Hello World"

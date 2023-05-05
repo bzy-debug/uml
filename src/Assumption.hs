@@ -1,9 +1,9 @@
 module Assumption where
 
-import Ast
-import Primitives
+import Basic
 import Data.Bifunctor
 import Data.List
+import Primitives
 import Scheme
 import Subst
 
@@ -25,6 +25,9 @@ bindScheme x s (assum, free) =
 bindSchemes :: [Name] -> [Scheme] -> Assumption -> Assumption
 bindSchemes names schemes assum =
   foldr (uncurry bindScheme) assum (zip names schemes)
+
+extendAssum :: Env Scheme -> Assumption -> Assumption
+extendAssum binds assum = foldr (uncurry bindScheme) assum binds
 
 ftvAssum :: Assumption -> [Name]
 ftvAssum (_, ftvs) = ftvs

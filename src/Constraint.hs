@@ -1,6 +1,6 @@
 module Constraint where
 
-import Ast
+import Basic
 import Data.List
 import Subst
 import Type

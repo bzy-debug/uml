@@ -4,23 +4,68 @@ module Infer where
 
 import Assumption
 import Ast
+import Basic
 import Constraint
 import Control.Monad.Except
-import Control.Monad.Identity
-import Control.Monad.Reader
 import Control.Monad.State
 import Data.List
+import Kind
+import Lens.Micro
+import Lens.Micro.Extras
 import Scheme
 import Subst
 import Type
 
-type TypeofMonad = ExceptT String (ReaderT Assumption (StateT Int Identity))
+type TypeofMonad = ExceptT String (State TypeofState)
+
+data TypeofState = TypeofState
+  { _nextIdentity :: Int,
+    _freshCounter :: Int,
+    _kindEnv :: Env (TypeCons, Kind),
+    _typeEnv :: Assumption
+  }
+
+nextIdentity :: Lens' TypeofState Int
+nextIdentity f (TypeofState i c k t) = (\i -> TypeofState i c k t) <$> f i
+
+freshCounter :: Lens' TypeofState Int
+freshCounter f (TypeofState i c k t) = (\c -> TypeofState i c k t) <$> f c
+
+kindEnv :: Lens' TypeofState (Env (TypeCons, Kind))
+kindEnv f (TypeofState i c k t) = (\k -> TypeofState i c k t) <$> f k
+
+typeEnv :: Lens' TypeofState Assumption
+typeEnv f (TypeofState i c k t) = TypeofState i c k <$> f t
+
+getAssum :: TypeofMonad Assumption
+getAssum = gets $ view typeEnv
+
+bindAssum :: Name -> Scheme -> TypeofMonad ()
+bindAssum x s = modify $ typeEnv %~ bindScheme x s
+
+bindsAssum :: [Name] -> [Scheme] -> TypeofMonad ()
+bindsAssum xs ss = modify $ typeEnv %~ bindSchemes xs ss
+
+localAssum :: (Assumption -> Assumption) -> TypeofMonad a -> TypeofMonad a
+localAssum f mv = do
+  initState <- get
+  modify $ typeEnv %~ f
+  v <- mv
+  put initState
+  return v
+
+newConstructor :: String -> TypeofMonad TypeCons
+newConstructor name = do
+  new <- gets $ view nextIdentity
+  modify $ nextIdentity %~ (+ 1)
+  return $ TypeCons name new
 
 freshType :: TypeofMonad Type
 freshType = do
-  counter <- get
+  typeofState <- get
+  let counter = typeofState ^. freshCounter
   let freshName = "'t" ++ show counter
-  put $ counter + 1
+  put $ typeofState & freshCounter %~ (+ 1)
   return $ TVar freshName
 
 freshTypes :: Int -> TypeofMonad [Type]
@@ -38,7 +83,7 @@ varBind x (TVar y) =
       else singleSubst x (TVar y)
 varBind x t =
   if occurs x t
-    then throwError $ "BugInTypeTypeofence: " ++ x ++ " occurs in " ++ show t
+    then error $ "BugInTypeTypeofence: " ++ x ++ " occurs in " ++ show t
     else return $ singleSubst x t
 
 solve :: Constraint -> TypeofMonad Subst
@@ -72,23 +117,28 @@ solve (Ceq t1 t2) =
 literalType :: Value -> TypeofMonad Type
 literalType (Sym _) = return symType
 literalType (Num _) = return intType
-literalType (Bool _) = return boolType
-literalType Nil = return $ listType alpha
-literalType (Pair v Nil) = listType <$> literalType v
-literalType (Pair v1 v2) = do
+literalType (ConVal "'()" []) = return $ listType alpha
+literalType (ConVal "cons" [v, ConVal "'()" []]) = listType <$> literalType v
+literalType (ConVal "cons" [v1, v2]) = do
   t1 <- literalType v1
   t2 <- literalType v2
   if listType t1 == t2
     then return t2
     else cannotUnify (listType t1) t2
-literalType _ = throwError "BugInTypeTypeofence: closures and primitives are not literal"
+literalType _ = error "BugInTypeTypeofence: closures and primitives are not literal"
 
 typeof :: Exp -> TypeofMonad (Type, Constraint)
 typeof (Literal v) = (,Trival) <$> literalType v
 typeof (Var x) = do
-  assum <- ask
+  assum <- gets $ view typeEnv
   case findScheme assum x of
     Nothing -> throwError $ "NotFound: " ++ x
+    Just scheme@(Scheme names _) ->
+      (,Trival) . instantiate scheme <$> freshTypes (length names)
+typeof (VCon c) = do
+  assum <- gets $ view typeEnv
+  case findScheme assum c of
+    Nothing -> throwError $ "NotFound: " ++ c
     Just scheme@(Scheme names _) ->
       (,Trival) . instantiate scheme <$> freshTypes (length names)
 typeof (If e1 e2 e3) = do
@@ -106,12 +156,12 @@ typeof (Begin es) =
 typeof (Lambda names exp) = do
   alphas <- freshTypes (length names)
   let schemes = map (Scheme []) alphas
-  (ret, c) <- local (bindSchemes names schemes) (typeof exp)
+  (ret, c) <- localAssum (bindSchemes names schemes) (typeof exp)
   return (funType alphas ret, c)
 typeof (Apply fun args) = do
   (typs, c) <- typeofMany (fun : args)
   case typs of
-    [] -> undefined
+    [] -> error "BugsInTypeInfer"
     (funTyp : argTyps) -> do
       alpha <- freshType
       return (alpha, c `Cand` (funTyp `Ceq` funType argTyps alpha))
@@ -119,10 +169,10 @@ typeof (Letx Let binds body) = do
   let (names, exps) = unzip binds
   (typs, c) <- typeofMany exps
   s <- solve c
-  assum <- ask
+  assum <- getAssum
   let c' = conjoin [TVar alpha `Ceq` subst s (TVar alpha) | alpha <- dom s `union` ftvAssum assum]
   let schemes = [generalize (subst s typ) (ftvAssum assum ++ ftvCons c') | typ <- typs]
-  (bodyTyp, bodyCons) <- local (bindSchemes names schemes) (typeof body)
+  (bodyTyp, bodyCons) <- localAssum (bindSchemes names schemes) (typeof body)
   return (bodyTyp, c' `Cand` bodyCons)
 typeof (Letx LetStar binds body) =
   typeof $ desugur binds
@@ -134,14 +184,59 @@ typeof (Letx LetRec binds body) = do
   let (names, exps) = unzip binds
   alphas <- freshTypes (length names)
   let alphaSchemes = map (Scheme []) alphas
-  (typs, cr) <- local (bindSchemes names alphaSchemes) (typeofMany exps)
+  (typs, cr) <- localAssum (bindSchemes names alphaSchemes) (typeofMany exps)
   let c = conjoin $ cr : zipWith Ceq typs alphas
   s <- solve c
-  assum <- ask
+  assum <- getAssum
   let c' = conjoin [TVar alpha `Ceq` subst s (TVar alpha) | alpha <- dom s `union` ftvAssum assum]
   let schemes = [generalize (subst s typ) (ftvAssum assum ++ ftvCons c') | typ <- typs]
-  (bodyTyp, bodyCons) <- local (bindSchemes names schemes) (typeof body)
+  (bodyTyp, bodyCons) <- localAssum (bindSchemes names schemes) (typeof body)
   return (bodyTyp, c' `Cand` bodyCons)
+typeof (Case e choices) = do
+  (te, ce) <- typeof e
+  choicesTyps <- mapM typeofChoice choices
+  let (tis, cis) = unzip choicesTyps
+  alpha <- freshType
+  let c' = conjoin $ map (\ti -> Ceq ti (funType [te] alpha)) tis
+  let c = ce `Cand` c' `Cand` conjoin cis
+  return (alpha, c)
+
+typeofChoice :: Choice -> TypeofMonad (Type, Constraint)
+typeofChoice (p, e) =
+  do
+    (binds, t, c) <- typeofPat p
+    (t', c') <- localAssum (extendAssum binds) (typeof e)
+    return (funType [t] t', Cand c c')
+
+typeofPat :: Pattern -> TypeofMonad (Env Scheme, Type, Constraint)
+typeofPat (PApp c []) = do
+  t <- typeofVCon c
+  return (emptyEnv, t, Trival)
+typeofPat Underscore = do
+  alpha <- freshType
+  return (emptyEnv, alpha, Trival)
+typeofPat (PVar x) = do
+  alpha <- freshType
+  let env = bind x (Scheme [] alpha) emptyEnv
+  return (env, alpha, Trival)
+typeofPat (PApp vcon pats) = do
+  vconT <- typeofVCon vcon
+  patsT <- mapM typeofPat pats
+  let (envis, tis, cis) = unzip3 patsT
+  alpha <- freshType
+  let c = Ceq vconT (funType tis alpha)
+  let c' = conjoin cis
+  case disjointUnion envis of
+    Left x -> throwError $ "TypeError: name " ++ x ++ " is bound multiple times in pattern"
+    Right env' -> return (env', alpha, Cand c c')
+
+typeofVCon :: VCon -> TypeofMonad Type
+typeofVCon c = do
+  assum <- gets $ view typeEnv
+  case findScheme assum c of
+    Nothing -> throwError $ "NotFound: " ++ c
+    Just scheme@(Scheme names _) ->
+      instantiate scheme <$> freshTypes (length names)
 
 typeofMany :: [Exp] -> TypeofMonad ([Type], Constraint)
 typeofMany exps = do
@@ -149,8 +244,8 @@ typeofMany exps = do
   let (expTypes, expCons) = unzip typCons
   return (expTypes, conjoin expCons)
 
-runTypeof :: TypeofMonad a -> (Either String a, Int)
-runTypeof e = runIdentity (runStateT (runReaderT (runExceptT e) primitiveAssum) 0)
+runTypeof :: TypeofMonad a -> TypeofState -> (Either String a, TypeofState)
+runTypeof e = runState (runExceptT e)
 
 infer :: Exp -> TypeofMonad Scheme
 infer exp = do
@@ -160,6 +255,6 @@ infer exp = do
   return $ generalize typ' []
 
 infer' :: Exp -> Either String String
-infer' exp = case fst (runTypeof (infer exp)) of
+infer' exp = case fst (runTypeof (infer exp) undefined) of
   Left err -> Left err
   Right v -> Right $ show v
