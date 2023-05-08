@@ -4,6 +4,33 @@ import Core
 import Scheme
 import Type
 
+intType :: Type
+intType = TCon $ TypeCons "int" 0
+
+symType :: Type
+symType = TCon $ TypeCons "sym" 1
+
+arrowType :: Type
+arrowType = TCon $ TypeCons "->" 2
+
+argType :: Type
+argType = TCon $ TypeCons "arg" 3
+
+funType :: [Type] -> Type -> Type
+funType args ret = TApp arrowType [TApp argType args, ret]
+
+alpha :: Type
+alpha = TVar "'a"
+
+boolType :: Type
+boolType = TCon $ TypeCons "bool" 4
+
+true :: Value
+true = ConVal "#t" []
+
+false :: Value
+false = ConVal "#f" []
+
 embedInt :: Int -> Value
 embedInt = Num
 
@@ -12,8 +39,8 @@ projectInt (Num n) = Just n
 projectInt _ = Nothing
 
 embedBool :: Bool -> Value
-embedBool True = ConVal "#t" []
-embedBool False = ConVal "#f" []
+embedBool True = true
+embedBool False = false
 
 projectBool :: Value -> Bool
 projectBool (ConVal "#t" []) = True
@@ -48,22 +75,19 @@ intCompare f = binaryOp f'
     f' (Num n1) (Num n2) = embedBool $ f n1 n2
     f' _ _ = error "BugInTypeInference: arithmetic comparision on non-number value"
 
--- primitiveEqual :: Value -> Value -> EvalMonad Bool
--- primitiveEqual v v' =
---   let noFun = throwError "compare function for equality"
---    in case (v, v') of
--- --        (Nil, Nil) -> return True
---         (Num n1, Num n2) -> return $ n1 == n2
---         (Sym v1, Sym v2) -> return $ v1 == v2
--- --        (Bool b1, Bool b2) -> return $ b1 == b2
--- --        (Pair v vs, Pair v' vs') -> liftM2 (&&) (primitiveEqual v v') (primitiveEqual vs vs')
--- --        (Pair _ _, Nil) -> return False
--- --        (Nil, Pair _ _) -> return False
---         (Closure {}, _) -> noFun
---         (Primitive {}, _) -> noFun
---         (_, Closure {}) -> noFun
---         (_, Primitive {}) -> noFun
---         _ -> error "BugInTypeInference: compare"
+primitiveEqual :: Value -> Value -> Bool
+primitiveEqual v v' =
+  let noFun = error "compare function for equality"
+   in case (v, v') of
+        (Num n1, Num n2) -> n1 == n2
+        (Sym v1, Sym v2) -> v1 == v2
+        (ConVal c1 vs1, ConVal c2 vs2) ->
+          c1 == c2 && and (zipWith primitiveEqual vs1 vs2)
+        (Closure {}, _) -> noFun
+        (Primitive {}, _) -> noFun
+        (_, Closure {}) -> noFun
+        (_, Primitive {}) -> noFun
+        _ -> error "BugInTypeInference: compare"
 
 monoType :: Type -> Scheme
 monoType = Scheme []
@@ -78,6 +102,6 @@ primitives =
     ("*", arithOp (*), monoType $ funType [intType, intType] intType),
     ("/", arithOp div, monoType $ funType [intType, intType] intType),
     ("<", intCompare (<), monoType $ funType [intType, intType] boolType),
-    (">", intCompare (>), monoType $ funType [intType, intType] boolType)
---    ("=", comparison primitiveEqual, polyAlpha $ funType [alpha, alpha] boolType)
+    (">", intCompare (>), monoType $ funType [intType, intType] boolType),
+    ("=", comparison primitiveEqual, polyAlpha $ funType [alpha, alpha] boolType)
   ]

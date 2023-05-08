@@ -1,11 +1,13 @@
 module Main where
 
-import Ast
-import Control.Monad
 import Sexp
-import Infer
-import Eval
-import System.IO
+import Interp
 
 main :: IO ()
-main = putStrLn "Hello World"
+main = do
+  putStrLn "Hello World"
+  string <- readFile "./test"
+  case stringToCode string of
+    Left err -> putStrLn err
+    Right codes ->
+      fst <$> runInterpMonad (mapM_ interpCode codes) initMode emptyInterpState

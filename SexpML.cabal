@@ -50,19 +50,21 @@ extra-source-files: CHANGELOG.md
 library
   -- Modules exported by the library.
   exposed-modules:
-    Assumption
     Ast
     Basic
-    Core
     Constraint
+    Core
+    Desugar
     Eval
     Infer
+    Interp
     Kind
     Primitives
     Scheme
     Sexp
     Subst
     Type
+    TypeEnv
 
   -- Modules included in this library but not exported.
   -- other-modules:

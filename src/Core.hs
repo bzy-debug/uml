@@ -1,24 +1,25 @@
 module Core where
 
 import Basic
-import Type
 import Kind
+import Type
 
 data Def
   = Val Name Exp
   | Valrec Name Exp
-  | Data Name Kind [(Name, Type)]
+  | Data Name Kind [(Name, TypeExp)]
+  deriving Show
 
 data Exp
   = Literal Value
   | Var Name
   | VCon VCon
-  | Begin [Exp]
   | Apply Exp [Exp]
   | Let [(Name, Exp)] Exp
   | Letrec [(Name, Exp)] Exp
   | Lambda [Name] Exp
   | Case Exp [Choice]
+  deriving Show
 
 type Choice = (Pattern, Exp)
 
@@ -26,6 +27,7 @@ data Pattern
   = PVar Name
   | PApp VCon [Pattern]
   | Underscore
+  deriving Show
 
 data Value
   = Sym Name
@@ -42,16 +44,20 @@ instance Eq Value where
   _ == _ = False
 
 type Primitive = [Value] -> Value
+
+-- runPrimitive :: PrimitiveMonad a -> (a, String)
+-- runPrimitive = runWriter
+
 instance Show Value where
-  show (ConVal "cons" [v, vs]) = consString v vs
+  show (ConVal "CONS" [v, vs]) = consString v vs
     where
       consString :: Value -> Value -> String
-      consString v vs = "(" ++ show v ++ tail vs ++ ")"
+      consString v vs = "(" ++ show v ++ tail vs
       tail :: Value -> String
-      tail (ConVal "cons" [v, vs]) = " " ++ show v ++ tail vs
-      tail (ConVal "'()" []) = ")"
-      tail _ = error "BugInTypeInference: bad list constructor (or cons/'() redefined)"
-  show (ConVal "'()" []) = "()"
+      tail (ConVal "CONS" [v, vs]) = " " ++ show v ++ tail vs
+      tail (ConVal "NIL" []) = ")"
+      tail _ = error "BugInTypeInference: bad list constructor (or CONS/NIL redefined)"
+  show (ConVal "NIL" []) = "()"
   show (ConVal c []) = c
   show (ConVal c vs) = "(" ++ unwords (c : map show vs) ++ ")"
   show (Sym v) = v

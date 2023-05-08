@@ -13,6 +13,24 @@ instance Show Scheme where
   show (Scheme names typ) =
     "(forall [" ++ unwords names ++ "] " ++ show typ ++ ")"
 
+data SchemeShape
+  = MonoFun [Type] Type
+  | MonoVal Type
+  | PolyFun [Name] [Type] Type
+  | PolyVal [Name] Type
+
+schemeShape :: Scheme -> SchemeShape
+schemeShape (Scheme alphas typ) =
+  case asFunType typ of
+    Nothing ->
+      case alphas of
+        [] -> MonoVal typ
+        _ -> PolyVal alphas typ
+    Just (args, result) ->
+      case alphas of
+        [] -> MonoFun args result
+        _ -> PolyFun alphas args result
+
 ftvScheme :: Scheme -> [Name]
 ftvScheme (Scheme names typ) = ftv typ \\ names
 

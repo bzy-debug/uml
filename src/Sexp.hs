@@ -11,6 +11,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Read
+import Type
 
 type ToAstMonad = Except String
 
@@ -21,7 +22,6 @@ asCode :: Sexp -> ToAstMonad Code
 asCode se =
   (Command <$> asCommand se)
     `catchError` const (Definition <$> asDef se)
-    `catchError` const (Expression <$> asExp se)
 
 asValue :: Sexp -> ToAstMonad Value
 asValue (Atom s) =
@@ -29,8 +29,8 @@ asValue (Atom s) =
     Just i -> return $ Num i
     Nothing -> throwError $ "Expect Number but got " ++ s
 asValue (Slist (Atom "quote" : es)) =
-  let vCon v vs = ConVal "cons" [v, vs]
-      vNil = ConVal "'()" []
+  let vCon v vs = ConVal "CONS" [v, vs]
+      vNil = ConVal "NIL" []
       toValue (Atom s) = maybe (Sym s) Num (readMaybe s :: Maybe Int)
       toValue (Slist es) = foldr (vCon . toValue) vNil es
    in return $ case es of
@@ -47,24 +47,27 @@ asCommand se@(Slist (Atom "use" : _)) = throwError $ "Ill formed use" ++ show se
 asCommand se@(Slist (Atom "check" : _)) = throwError $ "Ill formed check" ++ show se
 asCommand se = throwError $ "Expect Command but got " ++ show se
 
+someSexp :: (Sexp -> ToAstMonad a) -> Sexp -> ToAstMonad [a]
+someSexp f se@(Atom _) = mapM f [se]
+someSexp f (Slist se) = mapM f se
+
 asKind :: Sexp -> ToAstMonad Kind
 asKind (Atom "*") = return Star
-asKind (Slist [Atom "=>", Slist se1, se2]) = liftM2 Arrow (mapM asKind se1) (asKind se2)
+asKind (Slist [Atom "=>", se1, se2]) =
+  liftM2 Arrow (someSexp asKind se1) (asKind se2)
 asKind se = throwError $ "Expect Kind but got " ++ show se
 
 asTypeExp :: Sexp -> ToAstMonad TypeExp
-asTypeExp (Atom name) =
-  return $
-    if isConstructor name
-      then TyName name
-      else TyVar name
-asTypeExp (Slist [Atom "->", Slist se1, se2]) = liftM2 FunTy (mapM asTypeExp se1) (asTypeExp se2)
-asTypeExp (Slist [Atom "forall", Slist se1, se2]) = liftM2 Forall (mapM asVariableName se1) (asTypeExp se2)
-asTypeExp (Slist [se1, Slist se2]) = liftM2 ConApp (asTypeExp se1) (mapM asTypeExp se2)
+asTypeExp (Atom name)
+  | isConstructor name = throwError $ "Expect type constructor but got value constructor" ++ name
+  | isTypeVariable name = return $ TyVar name
+  | otherwise = return $ TyCon name
+asTypeExp (Slist [Atom "->", se1, se2]) = liftM2 FunTy (someSexp asTypeExp se1) (asTypeExp se2)
+asTypeExp (Slist [Atom "forall", Slist se1, se2]) = liftM2 Forall (mapM asTypeVariable se1) (asTypeExp se2)
+asTypeExp (Slist (se1: se2)) = liftM2 ConApp (asTypeExp se1) (mapM asTypeExp se2)
 asTypeExp se = throwError $ "Expect TypeExp but got " ++ show se
 
 asDef :: Sexp -> ToAstMonad Def
-asDef se@(Atom _) = DExp <$> asExp se
 asDef (Slist [Atom "val", se1, se2]) = do
   name <- asName se1
   exp <- asExp se2
@@ -78,27 +81,28 @@ asDef (Slist [Atom "define", se1, Slist se2, se3]) = do
   names <- mapM asName se2
   exp <- asExp se3
   return $ Define name names exp
-asDef (Slist [Atom "data", se1, se2, Slist se3]) = do
-  name <- asVariableName se1
-  kind <- asKind se2
+asDef (Slist (Atom "data" : se1 : se2 : se3)) = do
+  kind <- asKind se1
+  name <- asVariableName se2
   entries <- mapM asEntry se3
   return $ Data name kind entries
-asDef (Slist [Atom "implicit-data", se1, Slist se2]) = do
+asDef (Slist (Atom "implicit-data" : se1 : se2)) = do
   name <- asVariableName se1
   entries <- mapM asImplicitEntry se2
-  return $ Implicit Nothing name entries
-asDef (Slist [Atom "implicit-data", Slist se1, se2, Slist se3]) = do
+  return $ Implicit [] name entries
+asDef (Slist (Atom "implicit-data" : (Slist se1) : se2 : se3)) = do
   typvars <- mapM asVariableName se1
   name <- asVariableName se2
   entries <- mapM asImplicitEntry se3
-  return $ Implicit (Just typvars) name entries
+  return $ Implicit typvars name entries
 asDef se@(Slist (Atom "val" : _)) = throwError $ "Ill formed val: " ++ show se
-asDef se@(Slist (Atom "valrec" : _)) = throwError $ "Ill formed valrec" ++ show se
-asDef se@(Slist (Atom "define" : _)) = throwError $ "Ill formed define" ++ show se
-asDef se@(Slist (Atom "data" : _)) = throwError $ "Ill formed data" ++ show se
-asDef se@(Slist (Atom "implicit-data" : _)) = throwError $ "Ill formed implicit-data" ++ show se
-asDef se = throwError $ "Not Define" ++ show se
---TODO record
+asDef se@(Slist (Atom "valrec" : _)) = throwError $ "Ill formed valrec " ++ show se
+asDef se@(Slist (Atom "define" : _)) = throwError $ "Ill formed define " ++ show se
+asDef se@(Slist (Atom "data" : _)) = throwError $ "Ill formed data " ++ show se
+asDef se@(Slist (Atom "implicit-data" : _)) = throwError $ "Ill formed implicit-data " ++ show se
+asDef se = DExp <$> asExp se
+
+-- TODO record
 
 asEntry :: Sexp -> ToAstMonad (Name, TypeExp)
 asEntry (Slist [se1, Atom ":", se2]) = do
@@ -107,14 +111,14 @@ asEntry (Slist [se1, Atom ":", se2]) = do
   return (cons, typ)
 asEntry se = throwError $ "Expect a data def entry but got " ++ show se
 
-asImplicitEntry :: Sexp -> ToAstMonad (Name, Maybe TypeExp)
-asImplicitEntry (Slist [se1, Atom "of", se2]) = do
+asImplicitEntry :: Sexp -> ToAstMonad (Name, [TypeExp])
+asImplicitEntry (Slist (se1 : Atom "of" : se2)) = do
   cons <- asConstructor se1
-  typ <- asTypeExp se2
-  return (cons, Just typ)
-asImplicitEntry (Slist [se1]) = do
+  typs <- mapM asTypeExp se2
+  return (cons, typs)
+asImplicitEntry se1@(Atom _) = do
   cons <- asConstructor se1
-  return (cons, Nothing)
+  return (cons, [])
 asImplicitEntry se = throwError $ "Expect a implicit data def entry but got " ++ show se
 
 asExp :: Sexp -> ToAstMonad Exp
@@ -132,9 +136,6 @@ asExp s =
           e2 <- asExp se2
           e3 <- asExp se3
           return $ If e1 e2 e3
-        Slist (Atom "begin" : ses) -> do
-          es <- mapM asExp ses
-          return $ Begin es
         Slist [Atom "let", Slist ses, seBody] ->
           do
             bindings <- mapM asBinding ses
@@ -166,7 +167,7 @@ asExp s =
               patterns <- mapM asPattern ses
               body <- asExp seBody
               return $ Lambdap patterns body
-        Slist [Atom "case", se, Slist ses] -> do
+        Slist (Atom "case" : se : ses) -> do
           scrutinee <- asExp se
           choices <- mapM asChoice ses
           return $ Case scrutinee choices
@@ -180,10 +181,10 @@ asExp s =
           rator <- asExp seRator
           rands <- mapM asExp seRands
           return $ Apply rator rands
-        Slist [] -> return $ Literal (ConVal "'()" [])
+        Slist [] -> return $ Literal (ConVal "NIL" [])
 
 isConstructor :: Name -> Bool
-isConstructor s = s == "cons" || "#" `isPrefixOf` s || "make-" `isPrefixOf` s || isUpper (head s)
+isConstructor s = "#" `isPrefixOf` s || "make-" `isPrefixOf` s || isUpper (head s)
 
 asConstructor :: Sexp -> ToAstMonad Name
 asConstructor se = do
@@ -192,12 +193,25 @@ asConstructor se = do
     then return name
     else throwError $ "Expect Constructor Name but got " ++ show se
 
+isTypeVariable :: Name -> Bool
+isTypeVariable s = "'" `isPrefixOf` s
+
+asTypeVariable :: Sexp -> ToAstMonad Name
+asTypeVariable se = do
+  name <- asName se
+  if isTypeVariable name
+    then return name
+    else throwError $ "Expect Constructor Name but got " ++ show se
+
 asVariableName :: Sexp -> ToAstMonad Name
 asVariableName se = do
   name <- asName se
   if isConstructor name
     then throwError $ "Expect Variable Name but got Constructor Name" ++ show se
-    else return name
+    else
+      if isTypeVariable name
+        then throwError $ "Expect Variable Name but got Type Variable " ++ show se
+        else return name
 
 asPattern :: Sexp -> ToAstMonad Pattern
 asPattern (Atom s) = do
@@ -209,7 +223,7 @@ asPattern (Atom s) = do
         if isConstructor name
           then PApp name []
           else PVar name
-asPattern (Slist [seCon, Slist ses]) = do
+asPattern (Slist (seCon : ses)) = do
   constructor <- asConstructor seCon
   patterns <- mapM asPattern ses
   return $ PApp constructor patterns
@@ -222,11 +236,17 @@ asChoice (Slist [sePattern, se]) = do
   return (pattern', exp)
 asChoice se = throwError $ "Expect Choice but got " ++ show se
 
+reservedNames :: [Name]
+reservedNames = ["define", "val", "valrec", "data", "implicit-data", "var", "if", "let", "let*", "letrec", "lambda", "case", "->", "=>", "forall"]
+
 asName :: Sexp -> ToAstMonad Name
 asName (Atom s) =
   case readMaybe s :: Maybe Int of
     Just i -> throwError $ "Expect Name but got Number " ++ show i
-    Nothing -> return s
+    Nothing ->
+      if s `elem` reservedNames
+        then throwError $ "Expect Name but got reserved name " ++ s
+        else return s
 asName se = throwError $ "Expect Name but got " ++ show se
 
 asLambda :: Sexp -> ToAstMonad Exp
@@ -281,7 +301,7 @@ letter :: Parser Char
 letter =
   letterChar
     <|> digitChar
-    <|> oneOf "!$%&*/:<=?>~_^.+-@#"
+    <|> oneOf "!$%&*/:<=?>~_^.+-@#'"
 
 name :: Parser String
 name = lexeme (some letter)
@@ -292,17 +312,8 @@ parseAtom = Atom <$> name
 parseList :: Parser Sexp
 parseList = Slist <$> surround (many parseSexp)
 
-parseQuote :: Parser Sexp
-parseQuote = do
-  _ <- char '\''
-  se <- parseSexp
-  return $
-    case se of
-      Atom _ -> Slist [Atom "quote", se]
-      Slist ss -> Slist (Atom "quote" : ss)
-
 parseSexp :: Parser Sexp
-parseSexp = spaceConsumer *> (parseAtom <|> parseList <|> parseQuote)
+parseSexp = spaceConsumer *> (parseAtom <|> parseList)
 
 parseSexps :: Parser [Sexp]
 parseSexps = many parseSexp

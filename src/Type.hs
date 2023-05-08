@@ -2,6 +2,15 @@ module Type where
 
 import Basic
 import Data.List
+import Text.Printf
+
+data TypeExp
+  = TyCon Name
+  | ConApp TypeExp [TypeExp]
+  | FunTy [TypeExp] TypeExp
+  | Forall [Name] TypeExp
+  | TyVar Name
+  deriving Show
 
 type TypeId = Int
 
@@ -19,7 +28,7 @@ instance Show TypeCons where
 data Type
   = TVar Name
   | TCon TypeCons
-  | TApp TypeCons [Type]
+  | TApp Type [Type]
   deriving (Eq)
 
 unions :: Eq a => [[a]] -> [a]
@@ -35,61 +44,23 @@ occurs x (TVar y) = x == y
 occurs _ (TCon _) = False
 occurs x (TApp _ ts) = any (occurs x) ts
 
-intCons :: TypeCons
-intCons = TypeCons "int" 0
-
-intType :: Type
-intType = TCon intCons
-
-symCons :: TypeCons
-symCons = TypeCons "sym" 1
-
-symType :: Type
-symType = TCon symCons
-
-boolCons :: TypeCons
-boolCons = TypeCons "bool" 2
-
-boolType :: Type
-boolType = TCon boolCons
-
-arrowCons :: TypeCons
-arrowCons = TypeCons "->" 3
-
-arrowType :: Type
-arrowType = TCon arrowCons
-
-argCons :: TypeCons
-argCons = TypeCons "args" 4
-
-argType :: Type
-argType = TCon argCons
-
-funType :: [Type] -> Type -> Type
-funType args ret = TApp arrowCons [TApp argCons args, ret]
-
-listCons :: TypeCons
-listCons = TypeCons "list" 5
-
-listType :: Type -> Type
-listType t = TApp listCons [t]
-
-alpha :: Type
-alpha = TVar "'a"
-
 asFunType :: Type -> Maybe ([Type], Type)
-asFunType (TApp arrow [TApp arg args, ret])
-  | arrow == arrowCons && arg == argCons =
-      Just (args, ret)
+asFunType
+  ( TApp
+      (TCon (TypeCons _ 2))
+      [TApp (TCon (TypeCons _ 3)) args, ret]
+    ) =
+    Just (args, ret)
 asFunType _ = Nothing
 
 instance Show Type where
   show typ =
     case asFunType typ of
       Just (args, ret) ->
-        "(" ++ unwords (map show args) ++ "->" ++ show ret ++ ")"
+        printf "(-> (%s) %s)" (unwords (map show args)) (show ret)
       Nothing ->
         case typ of
           TVar x -> x
           TCon c -> show c
-          TApp con types -> "(" ++ show con ++ " " ++ unwords (map show types) ++ ")"
+          TApp con types ->
+            printf "(%s %s)" (show con) (unwords (map show types))

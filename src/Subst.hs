@@ -28,6 +28,7 @@ subst ss (TVar x) =
 subst _ (TCon c) = TCon c
 subst ss (TApp c ts) = TApp c (map (subst ss) ts)
 
+-- s1 is the "old" subst
 compose :: Subst -> Subst -> Subst
 compose s2 s1 = s2 `union` map (second (subst s2)) s1
 

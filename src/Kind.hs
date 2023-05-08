@@ -1,8 +1,13 @@
 module Kind where
 
+import Basic
+import Type
+
 data Kind
   = Star
   | Arrow [Kind] Kind
+
+type KindEnv = Env (Type, Kind)
 
 instance Eq Kind where
   (==) Star Star = True

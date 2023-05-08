@@ -28,6 +28,11 @@ binds names vals env = zip names vals ++ env
 extend :: Env a -> Env a -> Env a
 extend e1 e2 = e2 ++ e1
 
+repeatTimes :: String -> Env a -> Int
+repeatTimes _ [] = 0
+repeatTimes name ((name', _):es) =
+  if name == name' then 1 + repeatTimes name es else repeatTimes name es
+
 disjointUnion :: [Env a] -> Either String (Env a)
 disjointUnion envs =
   let env = concat envs

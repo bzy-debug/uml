@@ -1,29 +1,40 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Eval where
 
-import Core
 import Basic
 import Control.Monad.Except
 import Control.Monad.State
+import Core
 import Lens.Micro
 import Lens.Micro.Extras
+import Type
+
+type ValueEnv = Env Value
 
 data EnvRef = EnvRef
-  { _mem :: [(Ref, Env Value)],
+  { _mem :: [(Ref, ValueEnv)],
     _ref :: Ref
   }
 
+emptyEnvRef :: EnvRef
+emptyEnvRef = EnvRef [] 0
+
 data EvalState = EvalState
-  { _valueEnv :: Env Value,
+  { _valueEnv :: ValueEnv,
     _envRef :: EnvRef
   }
 
-valueEnv :: Lens' EvalState (Env Value)
+emptyEvalState :: EvalState
+emptyEvalState = EvalState emptyEnv emptyEnvRef
+
+valueEnv :: Lens' EvalState ValueEnv
 valueEnv f (EvalState e r) = (`EvalState` r) <$> f e
 
 envRef :: Lens' EvalState EnvRef
 envRef f (EvalState e r) = EvalState e <$> f r
 
-mem :: Lens' EnvRef [(Ref, Env Value)]
+mem :: Lens' EnvRef [(Ref, ValueEnv)]
 mem f (EnvRef m r) = (`EnvRef` r) <$> f m
 
 ref :: Lens' EnvRef Ref
@@ -31,26 +42,29 @@ ref f (EnvRef m r) = EnvRef m <$> f r
 
 type EvalMonad = ExceptT String (State EvalState)
 
-newRef :: Env Value -> EvalMonad Ref
+newRef :: ValueEnv -> EvalMonad Ref
 newRef env = do
   evalState <- get
   let ref' = evalState ^. (envRef . ref)
   put $ evalState & (envRef . mem) %~ (\m -> (ref', env) : m) & (envRef . ref) %~ (+ 1)
   return ref'
 
-writeRef :: Ref -> Env Value -> EvalMonad ()
+writeRef :: Ref -> ValueEnv -> EvalMonad ()
 writeRef r e = modify $ (envRef . mem) %~ (\m -> (r, e) : m)
 
-readRef :: Ref -> EvalMonad (Env Value)
+readRef :: Ref -> EvalMonad ValueEnv
 readRef r = do
   mem' <- gets $ view (envRef . mem)
   case lookup r mem' of
     Nothing -> throwError $ "NotFound: " ++ show r
     Just env -> return env
 
+getEnv :: EvalMonad ValueEnv
+getEnv = gets $ view valueEnv
+
 lookupEnv :: Name -> EvalMonad Value
 lookupEnv x = do
-  env <- gets $ view valueEnv
+  env <- getEnv
   case lookup x env of
     Nothing -> throwError $ "NotFound: " ++ x
     Just v -> return v
@@ -58,17 +72,19 @@ lookupEnv x = do
 bindValue :: Name -> Value -> EvalMonad ()
 bindValue x v = modify $ valueEnv %~ bind x v
 
-bindValues :: [Name] -> [Value] -> EvalMonad ()
-bindValues xs vs = modify $ valueEnv %~ binds xs vs
-
-replaceEnv :: Env Value -> EvalMonad ()
+replaceEnv :: ValueEnv -> EvalMonad ()
 replaceEnv env = modify $ valueEnv .~ env
 
-extendEnv :: Env Value -> EvalMonad ()
-extendEnv env = modify $ valueEnv %~ (`extend` env)
+localState :: Lens' EvalState a -> (a -> a) -> EvalMonad b -> EvalMonad b
+localState len f mv = do
+  initState <- get
+  modify $ len %~ f
+  v <- mv
+  put initState
+  return v
 
-getEnv :: EvalMonad (Env Value)
-getEnv = gets $ view valueEnv
+localValueEnv :: (ValueEnv -> ValueEnv) -> EvalMonad b -> EvalMonad b
+localValueEnv = localState valueEnv
 
 asLambda :: Exp -> ([Name], Exp)
 asLambda (Lambda formals body) = (formals, body)
@@ -78,7 +94,7 @@ evalDef :: Def -> EvalMonad String
 evalDef (Val x e) = do
   v <- evalExp e
   bindValue x v
-  return $ x ++ " = " ++ show v
+  return $ show v
 evalDef (Valrec x e) = do
   env <- getEnv
   envRef <- newRef env
@@ -86,17 +102,24 @@ evalDef (Valrec x e) = do
   let newEnv = bind x closure env
   writeRef envRef newEnv
   replaceEnv newEnv
-  return $ show x ++ " = <closure>"
-evalDef (Data name _ _) = return name
+  return "<closure>"
+evalDef (Data _ _ typedVcons) = do
+  let vconValues = map valFor typedVcons
+  mapM_ (uncurry bindValue) vconValues
+  return ""
+  where
+    isFun (Forall _ tx) = isFun tx
+    isFun (FunTy _ _) = True
+    isFun _ = False
+    valFor (k, t) =
+      if isFun t
+        then (k, Primitive (ConVal k))
+        else (k, ConVal k [])
 
 evalExp :: Exp -> EvalMonad Value
 evalExp (Literal v) = return v
 evalExp (Var x) = lookupEnv x
 evalExp (VCon x) = lookupEnv x
-evalExp (Begin exps) =
-  let iter [] lastVal = lastVal
-      iter (e : es) _ = iter es (evalExp e)
-   in iter exps undefined
 evalExp (Apply fun args) = do
   funVal <- evalExp fun
   case funVal of
@@ -106,14 +129,12 @@ evalExp (Apply fun args) = do
     Closure (formals, body) ref -> do
       savedEnv <- readRef ref
       actuals <- mapM evalExp args
-      replaceEnv (binds formals actuals savedEnv)
-      evalExp body
+      localValueEnv (const (binds formals actuals savedEnv)) (evalExp body)
     _ -> error "BugInTypInference: apply non-function"
 evalExp (Let bs body) = do
   let (names, exps) = unzip bs
   values <- mapM evalExp exps
-  bindValues names values
-  evalExp body
+  localValueEnv (binds names values) (evalExp body)
 evalExp (Letrec bs body) = do
   let (names, exps) = unzip bs
   let lambdas = map asLambda exps
@@ -122,8 +143,7 @@ evalExp (Letrec bs body) = do
   let closures = map (`Closure` envRef) lambdas
   let newEnv = binds names closures env
   writeRef envRef newEnv
-  replaceEnv newEnv
-  evalExp body
+  localValueEnv (const newEnv) (evalExp body)
 evalExp (Lambda formals body) = do
   env <- getEnv
   ref <- newRef env
@@ -131,15 +151,13 @@ evalExp (Lambda formals body) = do
 evalExp (Case (Literal v) ((p, e) : choices)) =
   case match p v of
     Nothing -> evalExp (Case (Literal v) choices)
-    Just env' -> do
-      extendEnv env'
-      evalExp e
+    Just env' -> localValueEnv (`extend` env') (evalExp e)
 evalExp (Case (Literal v) []) = throwError $ "Runtime Error: case does not match " ++ show v
 evalExp (Case scrutinee cs) = do
   v <- evalExp scrutinee
   evalExp (Case (Literal v) cs)
 
-match :: Pattern -> Value -> Maybe (Env Value)
+match :: Pattern -> Value -> Maybe ValueEnv
 match (PApp c []) (ConVal c' [])
   | c == c' = Just emptyEnv
 match (PApp c ps) (ConVal c' vs)
