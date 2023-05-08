@@ -10,4 +10,4 @@ main = do
   case stringToCode string of
     Left err -> putStrLn err
     Right codes ->
-      fst <$> runInterpMonad (mapM_ interpCode codes) initMode emptyInterpState
+      fst <$> runInterpMonad (mapM_ interpCode codes) defaultMode initInterpState

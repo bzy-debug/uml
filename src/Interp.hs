@@ -6,9 +6,6 @@ import Control.Monad.State
 import Desugar
 import Eval
 import Infer
--- import Kind
--- import Sexp
--- import TypeEnv
 import Lens.Micro
 import Lens.Micro.Extras
 import Text.Printf
@@ -19,16 +16,16 @@ data OutputInteractivity = Echoing | NoEchoing
 
 type InterpMode = (InputInteractivity, OutputInteractivity)
 
-initMode :: InterpMode
-initMode = (Prompting, Echoing)
+defaultMode :: InterpMode
+defaultMode = (Prompting, Echoing)
 
 data InterpState = InterpState
   { _evalState :: EvalState,
     _typeofState :: TypeofState
   }
 
-emptyInterpState :: InterpState
-emptyInterpState = InterpState emptyEvalState emptyTypeofState
+initInterpState :: InterpState
+initInterpState = InterpState initEvalState initTypeofState
 
 evalState :: Lens' InterpState EvalState
 evalState f (InterpState e t) = (`InterpState` t) <$> f e
@@ -85,7 +82,7 @@ interpCode (Definition d) = interpDef d
 interpDef :: Ast.Def -> InterpMonad ()
 interpDef def = do
   let coreDef = desugarDef def
-  lift . lift $ print coreDef
+  -- lift . lift $ print coreDef
   typeS <- getTypeofState
   let (result, typeS') = runTypeof (typeofDef coreDef) typeS
   case result of

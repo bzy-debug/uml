@@ -1,5 +1,10 @@
 module Basic where
 
+import Debug.Trace
+
+debug :: a -> String -> a
+debug = flip trace
+
 data Sexp
   = Atom String
   | Slist [Sexp]

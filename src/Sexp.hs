@@ -64,7 +64,7 @@ asTypeExp (Atom name)
   | otherwise = return $ TyCon name
 asTypeExp (Slist [Atom "->", se1, se2]) = liftM2 FunTy (someSexp asTypeExp se1) (asTypeExp se2)
 asTypeExp (Slist [Atom "forall", Slist se1, se2]) = liftM2 Forall (mapM asTypeVariable se1) (asTypeExp se2)
-asTypeExp (Slist (se1: se2)) = liftM2 ConApp (asTypeExp se1) (mapM asTypeExp se2)
+asTypeExp (Slist (se1 : se2)) = liftM2 ConApp (asTypeExp se1) (mapM asTypeExp se2)
 asTypeExp se = throwError $ "Expect TypeExp but got " ++ show se
 
 asDef :: Sexp -> ToAstMonad Def
@@ -81,28 +81,43 @@ asDef (Slist [Atom "define", se1, Slist se2, se3]) = do
   names <- mapM asName se2
   exp <- asExp se3
   return $ Define name names exp
+asDef (Slist (Atom "define*" : ses)) = do
+  clauses <- mapM asClause ses
+  let (names, _, _) = unzip3 clauses
+  if all (head names ==) names
+    then return $ DefineS clauses
+    else throwError "names in clauses should be the same"
 asDef (Slist (Atom "data" : se1 : se2 : se3)) = do
   kind <- asKind se1
   name <- asVariableName se2
   entries <- mapM asEntry se3
   return $ Data name kind entries
+asDef (Slist (Atom "implicit-data" : (Slist se1) : se2 : se3)) = do
+  typvars <- mapM asTypeVariable se1
+  name <- asVariableName se2
+  entries <- mapM asImplicitEntry se3
+  return $ Implicit typvars name entries
 asDef (Slist (Atom "implicit-data" : se1 : se2)) = do
   name <- asVariableName se1
   entries <- mapM asImplicitEntry se2
   return $ Implicit [] name entries
-asDef (Slist (Atom "implicit-data" : (Slist se1) : se2 : se3)) = do
-  typvars <- mapM asVariableName se1
-  name <- asVariableName se2
-  entries <- mapM asImplicitEntry se3
-  return $ Implicit typvars name entries
 asDef se@(Slist (Atom "val" : _)) = throwError $ "Ill formed val: " ++ show se
 asDef se@(Slist (Atom "valrec" : _)) = throwError $ "Ill formed valrec " ++ show se
 asDef se@(Slist (Atom "define" : _)) = throwError $ "Ill formed define " ++ show se
+asDef se@(Slist (Atom "define*" : _)) = throwError $ "Ill formed define* " ++ show se
 asDef se@(Slist (Atom "data" : _)) = throwError $ "Ill formed data " ++ show se
 asDef se@(Slist (Atom "implicit-data" : _)) = throwError $ "Ill formed implicit-data " ++ show se
 asDef se = DExp <$> asExp se
 
 -- TODO record
+
+asClause :: Sexp -> ToAstMonad Clause
+asClause (Slist [Slist (Atom n : ses), se]) = do
+  name <- asVariableName (Atom n)
+  pats <- mapM asPattern ses
+  exp <- asExp se
+  return (name, pats, exp)
+asClause se = throwError $ "Expect a clause but got " ++ show se
 
 asEntry :: Sexp -> ToAstMonad (Name, TypeExp)
 asEntry (Slist [se1, Atom ":", se2]) = do
@@ -136,42 +151,26 @@ asExp s =
           e2 <- asExp se2
           e3 <- asExp se3
           return $ If e1 e2 e3
-        Slist [Atom "let", Slist ses, seBody] ->
-          do
-            bindings <- mapM asBinding ses
-            body <- asExp seBody
-            return $ Letx Let bindings body
-            `catchError` \_ -> do
-              choices <- mapM asChoice ses
-              body <- asExp seBody
-              return $ Letp Let choices body
-        Slist [Atom "let*", Slist ses, seBody] ->
-          do
-            bindings <- mapM asBinding ses
-            body <- asExp seBody
-            return $ Letx LetStar bindings body
-            `catchError` \_ -> do
-              choices <- mapM asChoice ses
-              body <- asExp seBody
-              return $ Letp LetStar choices body
-        Slist [Atom "letrec", Slist seLambdaBindings, seBody] -> do
-          bindings <- mapM asLambdaBinding seLambdaBindings
+        Slist [Atom "let", Slist ses, seBody] -> do
+          choices <- asChoices ses
           body <- asExp seBody
-          return $ Letx LetRec bindings body
-        Slist [Atom "lambda", Slist ses, seBody] ->
-          do
-            names <- mapM asVariableName ses
-            body <- asExp seBody
-            return $ Lambda names body
-            `catchError` \_ -> do
-              patterns <- mapM asPattern ses
-              body <- asExp seBody
-              return $ Lambdap patterns body
+          return $ Letx Let choices body
+        Slist [Atom "let*", Slist ses, seBody] -> do
+          choices <- asChoices ses
+          body <- asExp seBody
+          return $ Letx LetStar choices body
+        Slist [Atom "letrec", Slist seChoices, seBody] -> do
+          choices <- mapM asRecChoice seChoices
+          body <- asExp seBody
+          return $ Letx LetRec choices body
+        Slist [Atom "lambda", Slist _, _] -> asLambda s
+        Slist (Atom "lambda*" : _) -> asLambdaS s
         Slist (Atom "case" : se : ses) -> do
           scrutinee <- asExp se
-          choices <- mapM asChoice ses
+          choices <- asChoices ses
           return $ Case scrutinee choices
         Slist (Atom "lambda" : _) -> throwError $ "Ill formed lambda: " ++ show s
+        Slist (Atom "lambda*" : _) -> throwError $ "Ill formed lambda*: " ++ show s
         Slist (Atom "if" : _) -> throwError $ "Ill formed if:" ++ show s
         Slist (Atom "let" : _) -> throwError $ "Ill formed let:" ++ show s
         Slist (Atom "let*" : _) -> throwError $ "Ill formed let*:" ++ show s
@@ -182,6 +181,13 @@ asExp s =
           rands <- mapM asExp seRands
           return $ Apply rator rands
         Slist [] -> return $ Literal (ConVal "NIL" [])
+
+asBranch :: Sexp -> ToAstMonad Branch
+asBranch (Slist [Slist ses, se]) = do
+  pats <- mapM asPattern ses
+  exp <- asExp se
+  return (pats, exp)
+asBranch se = throwError $ "Expect a branch but got " ++ show se
 
 isConstructor :: Name -> Bool
 isConstructor s = "#" `isPrefixOf` s || "make-" `isPrefixOf` s || isUpper (head s)
@@ -229,12 +235,50 @@ asPattern (Slist (seCon : ses)) = do
   return $ PApp constructor patterns
 asPattern se = throwError $ "Expect Pattern but got " ++ show se
 
+asLambda :: Sexp -> ToAstMonad Exp
+asLambda (Slist [Atom "lambda", Slist sePats, seBody]) = do
+  patterns <- mapM asPattern sePats
+  body <- asExp seBody
+  return $ Lambda patterns body
+asLambda se = throwError $ "Expect Lambda expression but got " ++ show se
+
+asLambdaS :: Sexp -> ToAstMonad Exp
+asLambdaS (Slist (Atom "lambda*" : ses)) = do
+  branches <- mapM asBranch ses
+  return $ LambdaS branches
+asLambdaS se = throwError $ "Expect Lambda* expression but got " ++ show se
+
+asRecChoice :: Sexp -> ToAstMonad Choice
+asRecChoice (Slist [sePat, se]) = do
+  pat <- asPattern sePat
+  case pat of
+    PVar _ -> do
+      lambda <- asLambda se
+      return (pat, lambda)
+      `catchError` \_ -> do
+        lambdaS <- asLambdaS se
+        return (pat, lambdaS)
+    _ -> throwError $ "letrec can only bind variable " ++ show sePat
+asRecChoice se = throwError $ "Expect RecChoice but got " ++ show se
+
 asChoice :: Sexp -> ToAstMonad Choice
 asChoice (Slist [sePattern, se]) = do
   pattern' <- asPattern sePattern
   exp <- asExp se
   return (pattern', exp)
 asChoice se = throwError $ "Expect Choice but got " ++ show se
+
+asChoices :: [Sexp] -> ToAstMonad [Choice]
+asChoices ses = do
+  choices <- mapM asChoice ses
+  let vs = concatMap (vars . fst) choices
+  case duplicateName vs of
+    Just x -> throwError $ x ++ " appears muptiple times in " ++ show ses
+    Nothing -> return choices
+  where
+    vars (PVar n) = [n]
+    vars (PApp _ pats) = unions (map vars pats)
+    vars Underscore = []
 
 reservedNames :: [Name]
 reservedNames = ["define", "val", "valrec", "data", "implicit-data", "var", "if", "let", "let*", "letrec", "lambda", "case", "->", "=>", "forall"]
@@ -248,27 +292,6 @@ asName (Atom s) =
         then throwError $ "Expect Name but got reserved name " ++ s
         else return s
 asName se = throwError $ "Expect Name but got " ++ show se
-
-asLambda :: Sexp -> ToAstMonad Exp
-asLambda (Slist [Atom "lambda", Slist seNames, seBody]) = do
-  names <- mapM asVariableName seNames
-  body <- asExp seBody
-  return $ Lambda names body
-asLambda se = throwError $ "Expect Lambda expression but got " ++ show se
-
-asLambdaBinding :: Sexp -> ToAstMonad (Name, Exp)
-asLambdaBinding (Slist [seName, seLambda]) = do
-  name <- asVariableName seName
-  lambdaExp <- asLambda seLambda
-  return (name, lambdaExp)
-asLambdaBinding se = throwError $ "Expect LambdaBinding but got " ++ show se
-
-asBinding :: Sexp -> ToAstMonad (Name, Exp)
-asBinding (Slist [seName, seExp]) = do
-  name <- asVariableName seName
-  exp <- asExp seExp
-  return (name, exp)
-asBinding se = throwError $ "Expect Binding but got " ++ show se
 
 type Parser = Parsec Void String
 
@@ -321,5 +344,5 @@ parseSexps = many parseSexp
 stringToCode :: String -> Either String [Code]
 stringToCode s =
   case runParser parseSexps "stdin" s of
-    Left _ -> Left "Syntax Error: Illeagal S-expression"
+    Left err -> Left (errorBundlePretty err)
     Right sexps -> runToAstMonad $ mapM asCode sexps

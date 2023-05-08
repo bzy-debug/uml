@@ -8,6 +8,7 @@ import Control.Monad.State
 import Core
 import Lens.Micro
 import Lens.Micro.Extras
+import Primitives
 import Type
 
 type ValueEnv = Env Value
@@ -17,16 +18,19 @@ data EnvRef = EnvRef
     _ref :: Ref
   }
 
-emptyEnvRef :: EnvRef
-emptyEnvRef = EnvRef [] 0
+initEnvRef :: EnvRef
+initEnvRef = EnvRef [] 0
 
 data EvalState = EvalState
   { _valueEnv :: ValueEnv,
     _envRef :: EnvRef
   }
 
-emptyEvalState :: EvalState
-emptyEvalState = EvalState emptyEnv emptyEnvRef
+initValueEnv :: ValueEnv
+initValueEnv = map (\(name, prim, _) -> (name, Primitive prim)) primitives
+
+initEvalState :: EvalState
+initEvalState = EvalState initValueEnv initEnvRef
 
 valueEnv :: Lens' EvalState ValueEnv
 valueEnv f (EvalState e r) = (`EvalState` r) <$> f e
@@ -77,10 +81,10 @@ replaceEnv env = modify $ valueEnv .~ env
 
 localState :: Lens' EvalState a -> (a -> a) -> EvalMonad b -> EvalMonad b
 localState len f mv = do
-  initState <- get
+  initState <- gets $ view len
   modify $ len %~ f
   v <- mv
-  put initState
+  modify $ len .~ initState
   return v
 
 localValueEnv :: (ValueEnv -> ValueEnv) -> EvalMonad b -> EvalMonad b

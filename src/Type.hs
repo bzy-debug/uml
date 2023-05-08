@@ -10,7 +10,7 @@ data TypeExp
   | FunTy [TypeExp] TypeExp
   | Forall [Name] TypeExp
   | TyVar Name
-  deriving Show
+  deriving (Show)
 
 type TypeId = Int
 
@@ -57,7 +57,9 @@ instance Show Type where
   show typ =
     case asFunType typ of
       Just (args, ret) ->
-        printf "(-> (%s) %s)" (unwords (map show args)) (show ret)
+        if length args == 1
+          then printf "(-> %s %s)" (unwords (map show args)) (show ret)
+          else printf "(-> (%s) %s)" (unwords (map show args)) (show ret)
       Nothing ->
         case typ of
           TVar x -> x

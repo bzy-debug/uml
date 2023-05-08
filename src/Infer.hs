@@ -28,8 +28,24 @@ data TypeofState = TypeofState
     _typeEnv :: TypeEnv
   }
 
-emptyTypeofState :: TypeofState
-emptyTypeofState = TypeofState 4 0 emptyEnv emptyTypeEnv
+initIdentity :: Int
+initIdentity = 4
+
+initKindEnv :: KindEnv
+initKindEnv =
+  [ ("int", (intType, Star)),
+    ("sym", (symType, Star)),
+    ("->", (arrowType, Arrow [Star, Star] Star)),
+    ("arg", (argType, Star))
+  ]
+
+initTypeEnv :: TypeEnv
+initTypeEnv = foldr (uncurry bindScheme) emptyTypeEnv schemes
+  where
+    schemes = map (\(name, _, scheme) -> (name, scheme)) primitives
+
+initTypeofState :: TypeofState
+initTypeofState = TypeofState 4 0 initKindEnv initTypeEnv
 
 nextIdentity :: Lens' TypeofState Int
 nextIdentity f (TypeofState i c k t) = (\i -> TypeofState i c k t) <$> f i
@@ -54,10 +70,10 @@ bindsTypeEnv xs ss = modify $ typeEnv %~ bindSchemes xs ss
 
 localState :: Lens' TypeofState a -> (a -> a) -> TypeofMonad b -> TypeofMonad b
 localState len f mv = do
-  initState <- get
+  initState <- gets $ view len
   modify $ len %~ f
   v <- mv
-  put initState
+  modify $ len .~ initState
   return v
 
 localTypeEnv :: (TypeEnv -> TypeEnv) -> TypeofMonad a -> TypeofMonad a
@@ -227,14 +243,14 @@ solve (Ceq t1 t2) =
 listType :: Type -> TypeofMonad Type
 listType t = do
   kindenv <- getKindEnv
-  case lookup "List" kindenv of
+  case lookup "list" kindenv of
     Nothing -> throwError "No List type in current basis"
     Just (listCons, _) -> return $ TApp listCons [t]
 
 unitType :: TypeofMonad Type
 unitType = do
   kindenv <- getKindEnv
-  case lookup "Unit" kindenv of
+  case lookup "unit" kindenv of
     Nothing -> throwError "No Unit type in current basis"
     Just (unitCons, _) -> return unitCons
 
@@ -255,7 +271,7 @@ typeofDef :: Def -> TypeofMonad String
 typeofDef (Val x exp) = do
   typeenv <- getTypeEnv
   (typ, cons) <- typeof exp
-  s <- solve cons
+  s <- solve cons -- `debug` show cons
   let scheme = generalize (subst s typ) (ftvTypeEnv typeenv)
   bindTypeEnv x scheme
   return $ show scheme
@@ -326,18 +342,17 @@ typeof (Letrec binds body) = do
 typeof (Case e choices) = do
   (te, ce) <- typeof e
   choicesTyps <- mapM typeofChoice choices
-  let (tis, cis) = unzip choicesTyps
+  let (ts, cs) = unzip choicesTyps
   alpha <- freshType
-  let c' = conjoin $ map (\ti -> Ceq ti (funType [te] alpha)) tis
-  let c = ce `Cand` c' `Cand` conjoin cis
+  let c' = conjoin [Ceq ti (funType [te] alpha) | ti <- ts]
+  let c = ce `Cand` c' `Cand` conjoin cs
   return (alpha, c)
 
 typeofChoice :: Choice -> TypeofMonad (Type, Constraint)
-typeofChoice (p, e) =
-  do
-    (binds, t, c) <- typeofPat p
-    (t', c') <- localTypeEnv (extendTypeEnv binds) (typeof e)
-    return (funType [t] t', Cand c c')
+typeofChoice (p, e) = do
+  (binds, t, c) <- typeofPat p
+  (t', c') <- localTypeEnv (extendTypeEnv binds) (typeof e)
+  return (funType [t] t', Cand c c')
 
 typeofPat :: Pattern -> TypeofMonad (Env Scheme, Type, Constraint)
 typeofPat (PApp c []) = do
@@ -353,11 +368,11 @@ typeofPat (PVar x) = do
 typeofPat (PApp vcon pats) = do
   vconT <- typeofVCon vcon
   patsT <- mapM typeofPat pats
-  let (envis, tis, cis) = unzip3 patsT
+  let (envs, ts, cs) = unzip3 patsT
   alpha <- freshType
-  let c = Ceq vconT (funType tis alpha)
-  let c' = conjoin cis
-  case disjointUnion envis of
+  let c = Ceq vconT (funType ts alpha)
+  let c' = conjoin cs
+  case disjointUnion envs of
     Left x -> throwError $ "TypeError: name " ++ x ++ " is bound multiple times in pattern"
     Right env' -> return (env', alpha, Cand c c')
 
