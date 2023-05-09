@@ -42,9 +42,9 @@ asValue se@(Slist _) = throwError $ "Expect Value but got " ++ show se
 asCommand :: Sexp -> ToAstMonad Command
 asCommand se@(Atom _) = throwError $ "Expect Command but got " ++ show se
 asCommand (Slist [Atom "use", se]) = Use <$> asName se
--- asCommand (Slist [Atom "check", se1, se2]) = Check <$> asExp se1 <*> asValue se2
+asCommand (Slist [Atom "check", se1, se2]) = Check <$> asExp se1 <*> asExp se2
 asCommand se@(Slist (Atom "use" : _)) = throwError $ "Ill formed use" ++ show se
--- asCommand se@(Slist (Atom "check" : _)) = throwError $ "Ill formed check" ++ show se
+asCommand se@(Slist (Atom "check" : _)) = throwError $ "Ill formed check" ++ show se
 asCommand se = throwError $ "Expect Command but got " ++ show se
 
 someSexp :: (Sexp -> ToAstMonad a) -> Sexp -> ToAstMonad [a]

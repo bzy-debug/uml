@@ -70,6 +70,9 @@ interpCommand (Use file) = do
   case stringToCode content of
     Left err -> lift . lift $ hPutStrLn stderr err
     Right codes -> local (const (NoPrompting, NoEchoing)) (mapM_ interpCode codes)
+interpCommand (Check e1 e2) = do
+  let equal = DExp $ Apply (Var "=") [e1, e2]
+  local (const (NoPrompting, Echoing)) (interpDef equal)
 
 interpDef :: Ast.Def -> InterpMonad ()
 interpDef def = do
@@ -96,7 +99,8 @@ interpDef def = do
 repl :: InterpMonad ()
 repl = forever $ do
   mode <- ask
-  when (prompts mode)
+  when
+    (prompts mode)
     (lift . lift $ putStr "> " >> hFlush stdout)
   string <- lift . lift $ getLine
   case stringToCode string of
