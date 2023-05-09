@@ -3,18 +3,21 @@ module Main where
 import Interp
 import Sexp
 import System.Environment
-
-interp a = runInterpMonad a defaultMode initInterpState
+import System.IO
 
 main :: IO ()
 main = do
-  putStrLn "Welcome to this language"
-  args <- getArgs
-  if not (null args)
-    then do
-      string <- readFile $ head args
-      case stringToCode string of
-        Left err -> putStrLn err
-        Right codes -> do
-          fst <$> interp (mapM_ interpCode codes >> repl)
-    else fst <$> interp repl
+  case stringToCode basis of
+    Left err -> hPutStrLn stderr err
+    Right codes -> do
+      basisInterpState <- snd <$> runInterpMonad (mapM_ interpCode codes) (NoPrompting, NoEchoing) initInterpState
+      putStrLn "Welcome to this language"
+      args <- getArgs
+      if not (null args)
+        then do
+          string <- readFile $ head args
+          case stringToCode string of
+            Left err -> hPutStrLn stderr err
+            Right codes -> do
+              fst <$> runInterpMonad (mapM_ interpCode codes >> repl) defaultMode basisInterpState
+        else fst <$> runInterpMonad repl defaultMode basisInterpState
