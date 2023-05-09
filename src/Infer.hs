@@ -271,7 +271,7 @@ typeofDef :: Def -> TypeofMonad String
 typeofDef (Val x exp) = do
   typeenv <- getTypeEnv
   (typ, cons) <- typeof exp
-  s <- solve cons -- `debug` show cons
+  s <- solve cons
   let scheme = generalize (subst s typ) (ftvTypeEnv typeenv)
   bindTypeEnv x scheme
   return $ show scheme

@@ -109,8 +109,6 @@ asDef se@(Slist (Atom "data" : _)) = throwError $ "Ill formed data " ++ show se
 asDef se@(Slist (Atom "implicit-data" : _)) = throwError $ "Ill formed implicit-data " ++ show se
 asDef se = DExp <$> asExp se
 
--- TODO record
-
 asClause :: Sexp -> ToAstMonad Clause
 asClause (Slist [Slist (Atom n : ses), se]) = do
   name <- asVariableName (Atom n)

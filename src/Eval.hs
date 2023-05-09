@@ -106,7 +106,7 @@ evalDef (Valrec x e) = do
   let newEnv = bind x closure env
   writeRef envRef newEnv
   replaceEnv newEnv
-  return "<closure>"
+  return "<function>"
 evalDef (Data _ _ typedVcons) = do
   let vconValues = map valFor typedVcons
   mapM_ (uncurry bindValue) vconValues

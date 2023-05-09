@@ -45,9 +45,6 @@ instance Eq Value where
 
 type Primitive = [Value] -> Value
 
--- runPrimitive :: PrimitiveMonad a -> (a, String)
--- runPrimitive = runWriter
-
 instance Show Value where
   show (ConVal "CONS" [v, vs]) = consString v vs
     where
