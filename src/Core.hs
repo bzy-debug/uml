@@ -8,7 +8,7 @@ data Def
   = Val Name Exp
   | Valrec Name Exp
   | Data Name Kind [(Name, TypeExp)]
-  deriving Show
+  deriving (Show)
 
 data Exp
   = Literal Value
@@ -19,7 +19,7 @@ data Exp
   | Letrec [(Name, Exp)] Exp
   | Lambda [Name] Exp
   | Case Exp [Choice]
-  deriving Show
+  deriving (Show)
 
 type Choice = (Pattern, Exp)
 
@@ -27,7 +27,7 @@ data Pattern
   = PVar Name
   | PApp VCon [Pattern]
   | Underscore
-  deriving Show
+  deriving (Show)
 
 data Value
   = Sym Name

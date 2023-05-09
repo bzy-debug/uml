@@ -1,6 +1,6 @@
 module Parser where
 
-newtype Parser a = Parser { runParser :: String -> Maybe (a, String)}
+newtype Parser a = Parser {runParser :: String -> Maybe (a, String)}
 
 instance Functor Parser where
   fmap f (Parser pa) = Parser $

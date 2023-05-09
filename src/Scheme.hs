@@ -1,8 +1,8 @@
 module Scheme where
 
+import Basic
 import Data.Char
 import Data.List
-import Basic
 import Subst
 import Type
 

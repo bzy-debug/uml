@@ -31,7 +31,7 @@ data Type
   | TApp Type [Type]
   deriving (Eq)
 
-unions :: Eq a => [[a]] -> [a]
+unions :: (Eq a) => [[a]] -> [a]
 unions = foldr union []
 
 ftv :: Type -> [Name]
