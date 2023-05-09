@@ -11,7 +11,7 @@ data Code
 
 data Command
   = Use Name
-  | Check Exp Value
+--  | Check Exp Value
   deriving Show
 
 data Def

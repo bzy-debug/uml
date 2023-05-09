@@ -8,6 +8,8 @@ import Eval
 import Infer
 import Lens.Micro
 import Lens.Micro.Extras
+import Sexp
+import System.IO
 import Text.Printf
 
 data InputInteractivity = Prompting | NoPrompting
@@ -59,43 +61,44 @@ putTypeofState :: TypeofState -> InterpMonad ()
 putTypeofState ts = modify $ Interp.typeofState .~ ts
 
 interpCode :: Code -> InterpMonad ()
-interpCode (Command _) = error "TODO" -- interpCommand c
+interpCode (Command c) = interpCommand c
 interpCode (Definition d) = interpDef d
 
--- interpCommand :: Command -> InterpMonad ()
--- interpCommand (Use file) = do
---   content <- lift . lift $ readFile file
---   case stringToCode content of
---     Left err -> lift . lift $ putStrLn err
---     Right codes -> mapM_ interpCode codes
--- interpCommand (Check e v) = do
---   s <- get
---   let (res, s1) = runEval (evalExp e) s
---   put s1
---   case res of
---     Left err -> lift . lift $ putStrLn err
---     Right v' -> do
---       if v == v'
---         then lift . lift $ putStrLn "check pass"
---         else lift . lift $ putStrLn ("Expect " ++ show v ++ " but got " ++ show v')
+interpCommand :: Command -> InterpMonad ()
+interpCommand (Use file) = do
+  content <- lift . lift $ readFile file
+  case stringToCode content of
+    Left err -> lift . lift $ hPutStrLn stderr err
+    Right codes -> local (const (NoPrompting, NoEchoing)) (mapM_ interpCode codes)
 
 interpDef :: Ast.Def -> InterpMonad ()
 interpDef def = do
+  mode <- ask
   let coreDef = desugarDef def
-  -- lift . lift $ print coreDef
   typeS <- getTypeofState
   let (result, typeS') = runTypeof (typeofDef coreDef) typeS
   case result of
-    Left err -> lift . lift $ putStrLn err
+    Left err -> lift . lift $ hPutStrLn stderr err
     Right typeResponse -> do
       evalS <- getEvalState
       let (result, evalS') = runEval (evalDef coreDef) evalS
       case result of
-        Left err -> lift . lift $ putStrLn err
+        Left err -> lift . lift $ hPutStrLn stderr err
         Right valueResponse -> do
-          lift . lift $
-            if valueResponse == ""
-              then mapM_ putStrLn (lines typeResponse)
-              else putStrLn (printf "%s : %s" valueResponse typeResponse)
+          when (echos mode) $
+            lift . lift $
+              if valueResponse == ""
+                then mapM_ putStrLn (lines typeResponse)
+                else putStrLn (printf "%s : %s" valueResponse typeResponse)
           putTypeofState typeS'
           putEvalState evalS'
+
+repl :: InterpMonad ()
+repl = forever $ do
+  mode <- ask
+  when (prompts mode)
+    (lift . lift $ putStr "> " >> hFlush stdout)
+  string <- lift . lift $ getLine
+  case stringToCode string of
+    Left err -> lift . lift $ hPutStrLn stderr err
+    Right code -> local (const (NoPrompting, Echoing)) (mapM_ interpCode code)
