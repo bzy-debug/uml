@@ -1,6 +1,6 @@
-* \(\mu\)ML
+* μML
 
-A haskell implementation of \(\mu\)ML in /Programming Languages: Build Prove and Compare./
+A haskell implementation of μML in /Programming Languages: Build Prove and Compare./
 
 ** Quick Start
 
