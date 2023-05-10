@@ -1,4 +1,4 @@
-# Revision history for SexpML
+# Revision history for uml
 
 ## 0.1.0.0 -- YYYY-mm-dd
 
