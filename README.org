@@ -1,8 +1,8 @@
-#+title: uml
+* \(\mu\)ML
 
-A haskell implementation of uml in /Programming Languages: Build Prove and Compare./
+A haskell implementation of \(\mu\)ML in /Programming Languages: Build Prove and Compare./
 
-* Quick Start
+** Quick Start
 
 start the repl with basis:
 #+begin_src
@@ -14,7 +14,7 @@ or repl with some file:
 $ cabal run uml -- /path/to/file
 #+end_src
 
-* Examples
+** Examples
 
 You can find some examples in ~examples~ folder
 
