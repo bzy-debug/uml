@@ -11,7 +11,7 @@ main = do
     Left err -> hPutStrLn stderr err
     Right codes -> do
       basisInterpState <- snd <$> runInterpMonad (mapM_ interpCode codes) (NoPrompting, NoEchoing) initInterpState
-      putStrLn "Welcome to this language"
+      putStrLn "Welcome to uml"
       args <- getArgs
       if not (null args)
         then do
