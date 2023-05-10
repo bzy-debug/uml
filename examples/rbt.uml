@@ -1,0 +1,36 @@
+(implicit-data color RED BLACK)
+(implicit-data ['a] rbtree
+               LEAF
+               [NODE of color 'a (rbtree 'a) (rbtree 'a)])
+
+(val empty LEAF)
+
+(define mem (x rbt)
+  (case rbt
+    [LEAF #f]
+    [(NODE _ y l r)
+     (if (< x y) (mem x l)
+         (if (> x y) (mem x r)
+             #t))]))
+
+(define*
+  [(balance BLACK z (NODE RED y (NODE RED x a b) c) d)
+   (NODE RED y (NODE BLACK x a b) (NODE BLACK z c d))]
+  [(balance BLACK z (NODE RED x a (NODE RED y b c)) d)
+   (NODE RED y (NODE BLACK x a b) (NODE BLACK z c d))]
+  [(balance BLACK x a (NODE RED z (NODE RED y b c) d))
+   (NODE RED y (NODE BLACK x a b) (NODE BLACK z c d))]
+  [(balance BLACK x a (NODE RED y b (NODE BLACK z c d)))
+   (NODE RED y (NODE BLACK x a b) (NODE BLACK z c d))]
+  [(balance a b c d) (NODE a b c d)])
+
+(define*
+  [(insert-aux x LEAF) (NODE RED x LEAF LEAF)]
+  [(insert-aux x (NODE c v l r))
+   (if (< x v) (balance c v (insert-aux x l) r)
+       (if (> x v) (balance c v l (insert-aux x r))
+           (NODE c v l r)))])
+
+(define insert (x s)
+  (case (insert-aux x s)
+    [(NODE _ y l r) (NODE BLACK y l r)]))
