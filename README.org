@@ -1,3 +1,23 @@
 #+title: uml
 
 A haskell implementation of uml in /Programming Languages: Build Prove and Compare./
+
+* Quick Start
+
+start the repl with basis:
+#+begin_src
+$ cabal run uml
+#+end_src
+
+or repl with some file:
+#+begin_src
+$ cabal run uml -- /path/to/file
+#+end_src
+
+* Examples
+
+You can find some examples in ~examples~ folder
+
+- ~basis.uml~: the basis
+- ~fib.uml~: Fibonacci number
+- ~rbt.uml~: Red Black Tree
