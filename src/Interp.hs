@@ -11,6 +11,7 @@ import Infer
 import Lens.Micro
 import Lens.Micro.Extras
 import Sexp
+import System.Exit
 import System.IO
 import Text.Printf
 
