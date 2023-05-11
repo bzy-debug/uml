@@ -5,3 +5,11 @@
           1
           (+ (fib (- n 1))
              (fib (- n 2))))))
+
+(define fib-iter-aux (a b n)
+  (if (= n 0) a
+      (if (= n 1) b
+          (fib-iter-aux b (+ a b) (- n 1)))))
+
+(define fib-iter (n)
+  (fib-iter-aux 1 1 n))

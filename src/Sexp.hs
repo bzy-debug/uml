@@ -342,6 +342,6 @@ parseSexps = many parseSexp
 
 stringToCode :: String -> Either String [Code]
 stringToCode s =
-  case runParser parseSexps "stdin" s of
+  case runParser parseSexps "" s of
     Left err -> Left (errorBundlePretty err)
     Right sexps -> runToAstMonad $ mapM asCode sexps
