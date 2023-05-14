@@ -189,11 +189,10 @@ basis =
   \      (if (< n2 n1) GREATER\
   \          EQUAL)))\
   \(define*\
-  \    [(car NIL) NONE]\
-  \    [(car (CONS y ys)) (SOME y)])\
+  \    [(car (CONS y ys)) y])\
   \(define*\
-  \    [(cdr NIL) NONE]\
-  \    [(cdr (CONS y ys)) (SOME ys)])\
+  \    [(cdr NIL) NIL]\
+  \    [(cdr (CONS y ys)) ys])\
   \(define*\
   \    [(append NIL ys) ys]\
   \    [(append (CONS x xs) ys) (CONS x (append xs ys))])\
