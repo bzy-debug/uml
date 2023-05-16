@@ -32,7 +32,7 @@ freshVar counter news names n =
   if length news == n
     then news
     else
-      let new = "x!" ++ show counter
+      let new = "x_" ++ show counter
        in if new `elem` names || new `elem` news
             then freshVar (counter + 1) news names n
             else freshVar (counter + 1) (new : news) names n

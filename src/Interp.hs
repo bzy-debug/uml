@@ -1,6 +1,8 @@
 module Interp where
 
 import Ast
+import Control.Exception
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.List
@@ -102,7 +104,10 @@ interpCode (Definition d) = interpDef d
 
 interpCommand :: Command -> InterpMonad ()
 interpCommand (Use file) = do
-  content <- liftIO $ readFile file
+  content <-
+    liftIO $ catch
+          (readFile file)
+          (\e -> hPrint stderr (e :: IOException) >> return "")
   interpString content silentMode
 interpCommand (Check e1 e2) = do
   let equal = DExp $ Apply (Var "=") [e1, e2]

@@ -324,7 +324,7 @@ typeof (Let binds body) = do
   s <- solve c
   typeenv <- getTypeEnv
   let c' = conjoin [TVar alpha `Ceq` subst s (TVar alpha) | alpha <- dom s `intersect` ftvTypeEnv typeenv]
-  let schemes = [generalize (subst s typ) (ftvTypeEnv typeenv `union` ftvCons c') | typ <- typs]
+  let schemes = [generalize (subst s typ) (ftvTypeEnv typeenv) | typ <- typs]
   (bodyTyp, bodyCons) <- localTypeEnv (bindSchemes names schemes) (typeof body)
   return (bodyTyp, c' `Cand` bodyCons)
 typeof (Letrec binds body) = do
@@ -336,7 +336,7 @@ typeof (Letrec binds body) = do
   s <- solve c
   typeenv <- getTypeEnv
   let c' = conjoin [TVar alpha `Ceq` subst s (TVar alpha) | alpha <- dom s `intersect` ftvTypeEnv typeenv]
-  let schemes = [generalize (subst s typ) (ftvTypeEnv typeenv `union` ftvCons c') | typ <- typs]
+  let schemes = [generalize (subst s typ) (ftvTypeEnv typeenv) | typ <- typs]
   (bodyTyp, bodyCons) <- localTypeEnv (bindSchemes names schemes) (typeof body)
   return (bodyTyp, c' `Cand` bodyCons)
 typeof (Case e choices) = do
