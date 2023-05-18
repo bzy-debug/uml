@@ -47,3 +47,6 @@
 
 (check (find (quote answer) alist) (SOME 42))
 (check (bound? (quote x) alist) #t)
+
+(check (max* (list5 23 123 435 23 1)) 435)
+(check (min* (list5 23 123 435 23 1)) 1)
