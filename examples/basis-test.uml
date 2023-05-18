@@ -1,0 +1,49 @@
+(check (null? NIL) #t)
+(check (null? (quote (1 2 3))) #f)
+
+(check (fst (PAIR 1 2)) 1)
+(check (snd (PAIR 1 2)) 2)
+
+(check (Int.compare 10 13) LESS)
+(check (Int.compare 42 0) GREATER)
+(check (Int.compare 42 42) EQUAL)
+
+(check (car (quote 1 2 3)) 1)
+(check (cdr (quote 1 2 3)) (quote (2 3)))
+
+(check (append (quote (1 2 3)) (quote 4 5)) (quote (1 2 3 4 5)))
+
+(check (reverse (quote (1 2 3))) (quote (3 2 1)))
+
+(check (length NIL) 0)
+(check (length (quote (1 2 3))) 3)
+
+(check (filter (lambda (x) (> x 1)) (quote (1 2 3)))
+       (quote (2 3)))
+
+(check (map (lambda (x) (+ x 42)) (quote (1 2 3)))
+       (quote (43 44 45)))
+
+(check (exists? (lambda (x) (= x 42)) (quote (1 2 3)))
+       #f)
+(check (exists? (lambda (x) (= x 2)) (quote (1 2 3)))
+       #t)
+
+(check (all? (lambda (x) (> x 0)) (quote (1 2 3)))
+       #t)
+
+(check (foldr + 0 (quote (1 2 3))) 6)
+(check (foldl * 1 (quote (2 4 6))) 48)
+
+(check (takewhile (lambda (x) (> x 42)) (quote (0 1 2)))
+       NIL)
+
+(check (dropwhile (lambda (x) (< x 1)) (quote (0 1 2)))
+       (quote (1 2)))
+
+(val alist NIL)
+(val alist (bind (quote x) 7 alist))
+(val alist (bind (quote answer) 42 alist))
+
+(check (find (quote answer) alist) (SOME 42))
+(check (bound? (quote x) alist) #t)

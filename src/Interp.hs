@@ -254,7 +254,6 @@ basis =
 \     (if (p? y)\
 \         (dropwhile p? ys)\
 \         xs)]))\
-\(define list1 (x) (CONS x NIL))\
 \(define bind (x y alist)\
 \  (case alist\
 \    [NIL (list1 (PAIR x y))]\
