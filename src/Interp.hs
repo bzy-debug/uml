@@ -305,6 +305,6 @@ basis =
 \(define gcd (m n) (if (= n 0) m (gcd n (mod m n))))\
 \(define lcm (m n) (* m (/ n (gcd m n))))\
 \(define*\
-\  [(min* (CONS x xs)) (SOME (foldr min x xs))])\
+\  [(min* (CONS x xs)) (foldr min x xs)])\
 \(define*\
-\  [(max* (CONS x xs)) (SOME (foldr max x xs))])"
+\  [(max* (CONS x xs)) (foldr max x xs)])"
