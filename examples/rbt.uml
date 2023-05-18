@@ -10,8 +10,7 @@
     [LEAF #f]
     [(NODE _ y l r)
      (if (< x y) (mem x l)
-         (if (> x y) (mem x r)
-             #t))]))
+         (if (> x y) (mem x r) #t))]))
 
 (define*
   [(balance BLACK z (NODE RED y (NODE RED x a b) c) d)
