@@ -60,13 +60,13 @@
       (if (< n2 n1) GREATER
           EQUAL)))
 
-(define*
-    [(car NIL) NONE]
-    [(car (CONS y ys)) (SOME y)])
+(define car (l)
+  (case l
+    [(CONS x xs) x]))
 
-(define*
-    [(cdr NIL) NONE]
-    [(cdr (CONS y ys)) (SOME ys)])
+(define cdr (l)
+  (case l
+    [(CONS x xs) xs]))
 
 (define*
     [(append NIL ys) ys]
@@ -75,11 +75,6 @@
 (define*
     [(reverse NIL) NIL]
     [(reverse (CONS x xs)) (append (reverse xs) (CONS x NIL))])
-
-(define revapp (xs ys)
-  (case xs
-    [NIL        ys]
-    [(CONS z zs) (revapp zs (CONS z ys))]))
 
 (define*
     [(length NIL) 0]
