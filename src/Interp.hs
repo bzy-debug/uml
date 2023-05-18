@@ -254,13 +254,30 @@ basis =
 \     (if (p? y)\
 \         (dropwhile p? ys)\
 \         xs)]))\
+\(define list1 (x) (CONS x NIL))\
+\(define list2 (x y) (CONS x (CONS y NIL)))\
+\(define list3 (x y z) (CONS x (CONS y (CONS z NIL))))\
+\(define list4 (v1 v2 v3 v4)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 NIL)))))\
+\(define list5 (v1 v2 v3 v4 v5)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 NIL))))))\
+\(define list6 (v1 v2 v3 v4 v5 v6)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 (CONS v6 NIL)))))))\
+\(define list7 (v1 v2 v3 v4 v5 v6 v7)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 (CONS v6 (CONS v7 NIL))))))))\
+\(define list8 (v1 v2 v3 v4 v5 v6 v7 v8)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 (CONS v6 (CONS v7 (CONS v8 NIL)))))))))\
+\(define list9 (v1 v2 v3 v4 v5 v6 v7 v8 v9)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 (CONS v6 (CONS v7 (CONS v8 (CONS v9 NIL))))))))))\
+\(define list10 (v1 v2 v3 v4 v5 v6 v7 v8 v9 v10)\
+\  (CONS v1 (CONS v2 (CONS v3 (CONS v4 (CONS v5 (CONS v6 (CONS v7 (CONS v8 (CONS v9 (CONS v10 NIL)))))))))))\
 \(define bind (x y alist)\
 \  (case alist\
 \    [NIL (list1 (PAIR x y))]\
 \    [(CONS p ps)\
-\        (if (= x (fst p))\
-\            (CONS (PAIR x y) ps)\
-\            (CONS p (bind x y ps)))]))\
+\     (if (= x (fst p))\
+\         (CONS (PAIR x y) ps)\
+\         (CONS p (bind x y ps)))]))\
 \(define find (x alist)\
 \  (case alist\
 \    [NIL NONE]\
@@ -288,8 +305,6 @@ basis =
 \(define gcd (m n) (if (= n 0) m (gcd n (mod m n))))\
 \(define lcm (m n) (* m (/ n (gcd m n))))\
 \(define*\
-\  [(min* NIL) NONE]\
 \  [(min* (CONS x xs)) (SOME (foldr min x xs))])\
 \(define*\
-\  [(max* NIL) NONE]\
 \  [(max* (CONS x xs)) (SOME (foldr max x xs))])"
